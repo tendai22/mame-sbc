@@ -965,17 +965,17 @@ end
 
 if CPUS["M6800"] then
 	files {
---		MAME_DIR .. "src/devices/cpu/m6800/m6800.cpp",
---		MAME_DIR .. "src/devices/cpu/m6800/m6800.h",
---		MAME_DIR .. "src/devices/cpu/m6800/m6801.cpp",
---		MAME_DIR .. "src/devices/cpu/m6800/m6801.h",
---		MAME_DIR .. "src/devices/cpu/m6800/6800ops.hxx",
+		MAME_DIR .. "src/devices/cpu/m6800/m6800.cpp",
+		MAME_DIR .. "src/devices/cpu/m6800/m6800.h",
+		MAME_DIR .. "src/devices/cpu/m6800/m6801.cpp",
+		MAME_DIR .. "src/devices/cpu/m6800/m6801.h",
+		MAME_DIR .. "src/devices/cpu/m6800/6800ops.hxx",
 	}
 end
 
 if opt_tool(CPUS, "M6800") then
---	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6800/6800dasm.cpp")
---	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6800/6800dasm.h")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6800/6800dasm.cpp")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6800/6800dasm.h")
 end
 
 --------------------------------------------------
@@ -1012,31 +1012,31 @@ end
 
 if CPUS["M6809"] then
 	files {
---		MAME_DIR .. "src/devices/cpu/m6809/m6809.cpp",
---		MAME_DIR .. "src/devices/cpu/m6809/m6809.h",
---		MAME_DIR .. "src/devices/cpu/m6809/hd6309.cpp",
---		MAME_DIR .. "src/devices/cpu/m6809/hd6309.h",
---		MAME_DIR .. "src/devices/cpu/m6809/konami.cpp",
---		MAME_DIR .. "src/devices/cpu/m6809/konami.h",
---		MAME_DIR .. "src/devices/cpu/m6809/m6809inl.h",
+		MAME_DIR .. "src/devices/cpu/m6809/m6809.cpp",
+		MAME_DIR .. "src/devices/cpu/m6809/m6809.h",
+		MAME_DIR .. "src/devices/cpu/m6809/hd6309.cpp",
+		MAME_DIR .. "src/devices/cpu/m6809/hd6309.h",
+		MAME_DIR .. "src/devices/cpu/m6809/konami.cpp",
+		MAME_DIR .. "src/devices/cpu/m6809/konami.h",
+		MAME_DIR .. "src/devices/cpu/m6809/m6809inl.h",
 	}
 
 	dependency {
---		{ MAME_DIR .. "src/devices/cpu/m6809/m6809.cpp",   GEN_DIR .. "emu/cpu/m6809/m6809.hxx" },
---		{ MAME_DIR .. "src/devices/cpu/m6809/hd6309.cpp",  GEN_DIR .. "emu/cpu/m6809/hd6309.hxx" },
---		{ MAME_DIR .. "src/devices/cpu/m6809/konami.cpp",  GEN_DIR .. "emu/cpu/m6809/konami.hxx" },
+		{ MAME_DIR .. "src/devices/cpu/m6809/m6809.cpp",   GEN_DIR .. "emu/cpu/m6809/m6809.hxx" },
+		{ MAME_DIR .. "src/devices/cpu/m6809/hd6309.cpp",  GEN_DIR .. "emu/cpu/m6809/hd6309.hxx" },
+		{ MAME_DIR .. "src/devices/cpu/m6809/konami.cpp",  GEN_DIR .. "emu/cpu/m6809/konami.hxx" },
 	}
 
 	custombuildtask {
---		{ MAME_DIR .. "src/devices/cpu/m6809/m6809.lst"  , GEN_DIR .. "emu/cpu/m6809/m6809.hxx",   { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating m6809 source file...", PYTHON .. " $(1) $(<) > $(@)" }},
---		{ MAME_DIR .. "src/devices/cpu/m6809/hd6309.lst" , GEN_DIR .. "emu/cpu/m6809/hd6309.hxx",  { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating hd6309 source file...", PYTHON .. " $(1) $(<) > $(@)" }},
---		{ MAME_DIR .. "src/devices/cpu/m6809/konami.lst" , GEN_DIR .. "emu/cpu/m6809/konami.hxx",  { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating konami source file...", PYTHON .. " $(1) $(<) > $(@)" }},
+		{ MAME_DIR .. "src/devices/cpu/m6809/m6809.lst"  , GEN_DIR .. "emu/cpu/m6809/m6809.hxx",   { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating m6809 source file...", PYTHON .. " $(1) $(<) > $(@)" }},
+		{ MAME_DIR .. "src/devices/cpu/m6809/hd6309.lst" , GEN_DIR .. "emu/cpu/m6809/hd6309.hxx",  { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating hd6309 source file...", PYTHON .. " $(1) $(<) > $(@)" }},
+		{ MAME_DIR .. "src/devices/cpu/m6809/konami.lst" , GEN_DIR .. "emu/cpu/m6809/konami.hxx",  { MAME_DIR .. "src/devices/cpu/m6809/m6809make.py"  , MAME_DIR .. "src/devices/cpu/m6809/base6x09.lst"  }, {"@echo Generating konami source file...", PYTHON .. " $(1) $(<) > $(@)" }},
 	}
 end
 
 if opt_tool(CPUS, "M6809") then
---	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6809/6x09dasm.cpp")
---	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6809/6x09dasm.h")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6809/6x09dasm.cpp")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/m6809/6x09dasm.h")
 end
 
 --------------------------------------------------
