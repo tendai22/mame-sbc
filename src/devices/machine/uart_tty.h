@@ -46,6 +46,9 @@ public:
 
 	uart_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
+	// destructore .. restore tty device in it
+	~uart_device(void);
+
     // CPU interface
 	uint8_t status_r();
 	uint8_t data_r();
@@ -61,6 +64,7 @@ protected:
 			const char *tag,
 			device_t *owner,
 			uint32_t baudrate);
+
 
 	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
@@ -129,7 +133,7 @@ private:
     // file input redirection
     void reset_asciiart_input(void);
 	void reset_input_device(void);
-    void input_device_restore(void);
+    void restore_input_device(void);
 };
 
 DECLARE_DEVICE_TYPE(UART, uart_device)

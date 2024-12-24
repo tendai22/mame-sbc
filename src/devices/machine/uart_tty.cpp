@@ -33,6 +33,11 @@ uart_device::uart_device(const machine_config &mconfig, const char *tag, device_
 {
 }
 
+uart_device::~uart_device(void)
+{
+	restore_input_device();
+}
+
 void uart_device::device_start(void)
 {
 	fprintf(stderr, "uart_device::device_start, tick = %ld\n", get_tick());
@@ -221,7 +226,7 @@ void uart_device::reset_asciiart_input(void)
 #endif
 }
 
-void uart_device::input_device_restore(void)
+void uart_device::restore_input_device(void)
 {
 	changemode(0);
 }
@@ -277,7 +282,6 @@ int uart_device::getch(void)
 			if (ch == 0x04) {
 				fprintf(stderr, "exit\n");
 				machine().schedule_exit();
-				changemode(0);
 				return 0;
 			}
 			// key input conversion
