@@ -273,6 +273,13 @@ int uart_device::getch(void)
 				reset_asciiart_input();
 				return 0;
 			}
+			// system exit
+			if (ch == 0x04) {
+				fprintf(stderr, "exit\n");
+				machine().schedule_exit();
+				changemode(0);
+				return 0;
+			}
 			// key input conversion
 		    if (ch == 0x7f)
     		    ch = 0x08;

@@ -3649,7 +3649,7 @@ void render_manager::config_save(config_type cfg_type, util::xml::data_node *par
 		return;
 
 	// write out the interface target
-	if (m_ui_target->index() != 0)
+	if (m_ui_target && m_ui_target->index() != 0)
 	{
 		// create a node for it
 		util::xml::data_node *const uinode = parentnode->add_child("interface", nullptr);
