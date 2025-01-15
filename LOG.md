@@ -4026,3 +4026,87 @@ uint8_t sbc6800_state::uart_creg_r() {	return m_uart->status_r(); }
 `osd.h`, `osd_linux.c` を使わなくなりましたので、これらのソースを削除しました。
 
 ここで v0.996 タグを付与しました。
+
+## デバッガ呼び出し
+
+CPUループからデバッガを呼び出す。
+
+```
+	debugger_instruction_hook(m_pc);
+```
+
+この定義は diexec.h にあり、ヘッダ定義関数。
+
+```
+void device_execute_interface::debugger_instruction_hook(offs_t curpc)
+{
+	if (device().machine().debug_flags & DEBUG_FLAG_CALL_HOOK)
+		device().debug()->instruction_hook(curpc);
+}
+```
+
+device() は型 device_t で、class device_t はヘッダにある。
+
+```
+	device_t &device() { return m_device; }
+```
+
+なので、メンバ参照 m_device を返す。
+
+device().debug() は、device_debug 型を返す。
+
+```
+device_debug *debug() const { return m_debug.get(); }
+```
+
+m_debug は device_t クラスのメンバで、
+
+```
+std::unique_ptr<device_debug> m_debug;
+```
+
+である。instruction_hook() も device_debug クラスのメンバ関数。定義は `debugcpu.cpp` にある。
+
+* pc をトラッキングしている。
+* traceしているなら、 `m_trace->update(curpc);` を呼び出す。
+* シングルステップ処理。
+  + `curpc == m_stepaddr` ならば、set_execution_stopped() を呼び出し、ブレークポイントをリセットする。
+  + m_delay_steps が非ゼロならばデクリメントして、ゼロとなると set_execution_stopped() を呼び出す。
+* debug_view() の更新・debugger().refresh_display() する。
+
+set_execution_stopped() 関数。m_execution_state に STOPPED を代入するだけ。
+
+```
+void debugger_cop::set_execution_stopped() { m_execution_state = exec_state::STOPPED; }
+```
+
+では、m_execution_state の値を見て動きを変えるところを探す。
+
+```
+	exec_state execution_state() const { return m_execution_state; }
+	bool is_stopped() const { return m_execution_state == exec_state::STOPPED; }
+	bool is_running() const { return m_execution_state == exec_state::RUNNING; }
+```
+
+あたり。is_stopped()を探す。
+
+* void debugger_console::process_source_file() 中で、ソースファイルの行を読み込み execute_command している。
+* void debugger_cpu::wait_for_debugger(device_t &device) 中で、
+  + メモリが更新されていれば debugger_view に反映させる。
+  + process_source_file(): ソースファイルを処理する。
+  + scheduled_event_pending() ならば set_execution_running() する。
+
+void debugger_console::process_source_file() がキモらしい。
+
+* std::getline(*m_source_file, buf) でソースファイルを読み込んで
+* execute_command(buf, true); を繰り返し呼ぶ。
+
+m_source_file はstd::istreamのポインタである。
+
+```
+std::unique_ptr<std::istream> m_source_file;        // script source file
+```
+
+m_source_file は debugger_console::source_script(const char *file) で初期化される。
+
+* debugger_commands::execute_source(...) 中で呼び出される。
