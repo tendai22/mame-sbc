@@ -4243,4 +4243,19 @@ running_machine::start() が呼び出されるか、start() 中で tty_osd_inter
 
 ## tty_osd_interface を作る。
 
+* tty_osd_interface を作る。
+  + src/osd/tty ディレクトリを作って、その下に、ttymain.cpp, window.cpp を作ってゆくことなる。
+  + emuz80 で、tty_osd_interface::init() が呼び出されているかを確認する。
+
+* debug_tty も合わせて作る。
+  + src/osd/modules/debugger/none.cpp を複製して tty.cpp を作り、名前文字列 "tty" で始める。
+  + wait_for_debugger は少し工夫が必要だろう。debugger_cpu::wait_for_debugger から呼び出されていることを確認して、この中でデバッグコマンドプロセッサを動かす。
+
+* osd_common_t::init_subsystems() 中で、
+
+```
+m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
+```
+
+で差し込まれるので、select_module_options で tty_debug_module が選択されるように表を作る。
 
