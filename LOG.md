@@ -4027,6 +4027,10 @@ uint8_t sbc6800_state::uart_creg_r() {	return m_uart->status_r(); }
 
 ここで v0.996 タグを付与しました。
 
+# デバッガ機能の復活
+
+mame ソースコードを探索して、debugger 機能を有効にする方法を探る。
+
 ## デバッガ呼び出し
 
 CPUループからデバッガを呼び出す。
@@ -4080,6 +4084,10 @@ set_execution_stopped() 関数。m_execution_state に STOPPED を代入する�
 void debugger_cop::set_execution_stopped() { m_execution_state = exec_state::STOPPED; }
 ```
 
+命令実行中の hook では、m_executon_state の値を書き換えるだけ。実際のデバッグコマンド入力と実行は別のコンテキストにある。
+
+### デバッガコマンド入力と実行
+
 では、m_execution_state の値を見て動きを変えるところを探す。
 
 ```
@@ -4096,17 +4104,143 @@ void debugger_cop::set_execution_stopped() { m_execution_state = exec_state::STO
   + process_source_file(): ソースファイルを処理する。
   + scheduled_event_pending() ならば set_execution_running() する。
 
-void debugger_console::process_source_file() がキモらしい。
+デバッグコマンド処理コンテキストは debugger_cpu::wait_for_debugger(device_t &device) のようだ。
 
-* std::getline(*m_source_file, buf) でソースファイルを読み込んで
-* execute_command(buf, true); を繰り返し呼ぶ。
+デバッグコマンド実行は void debugger_console::process_source_file() がキモらしい。
 
-m_source_file はstd::istreamのポインタである。
+#### wait_for_debugger を呼び出すのはだれか？
+
+instruction_hook 中に呼び出し口がある。
 
 ```
-std::unique_ptr<std::istream> m_source_file;        // script source file
+	// if we are supposed to halt, do it now
+	if (debugcpu.is_stopped())
+		debugcpu.wait_for_debugger(m_device);
 ```
 
-m_source_file は debugger_console::source_script(const char *file) で初期化される。
+命令実行中/is_stopped() の間は、wait_for_debugger をポーリングしていることが分かる。
 
-* debugger_commands::execute_source(...) 中で呼び出される。
+### debug_module::wait_for_debugger もある
+
+debug_module クラスがあり、これも wait_for_debugger メンバ関数を持っている。
+
+```
+	virtual void wait_for_debugger(device_t &device, bool firststop) = 0;
+```
+
+debug_module クラスと debugger_cpu との関係は如何に？
+
+例えば debug_gdbstub クラスは debug_module を基底クラスとして持つ。
+
+debugger_cpu クラスはベースクラスを持たない。
+
+debugger_manager クラスが debugger_cpu クラスをメンバに持つ。
+
+debugger_cpu::wait_for_debugger メンバ関数中で2引数 wait_for_debugger を呼び出している。
+
+```
+if (m_machine.debug_flags & DEBUG_FLAG_OSD_ENABLED)
+	m_machine.osd().wait_for_debugger(device, firststop);
+```
+
+たぶんこの中でデバッグコマンド実行もしている。
+
+m_machine は running_machine クラスで、各デバイスのprivateメンバである。
+
+m_machien.osd() は machine_manager クラスの osd() を返す。結局、machine_manager クラスの m_osd メンバを返す。m_osd は class osd_interface である。
+
+ということで、osd_interface::wait_for_debugger である。2 引数の overridable 関数だ。
+
+```
+virtual void wait_for_debugger(device_t &device, bool firststop) = 0;
+```
+
+osd_interface::wait_for_debugger メンバ関数の定義は存在しないので、osd_interface の派生クラスでの定義を調べる。
+
+#### osd_interface の用法
+
+osd_module が select_module するときに、osd_module::init(osd, options) で osd_interface が渡される。
+
+osd_module::init は存在しない。よって、osd_module の派生クラスの init メンバ関数を見る。
+
+osd_common_t クラスが osd_interface の派生クラスであり、こいつも wait_for_debugger を持つので、これを見る。
+
+```
+void osd_common_t::wait_for_debugger(device_t &device, bool firststop)
+{
+	//
+	// When implementing an OSD-driver debugger, this method should be
+	// overridden to wait for input, process it, and return. It will be
+	// called repeatedly until a command is issued that resumes
+	// execution.
+	//
+	m_debugger->wait_for_debugger(device, firststop);
+}
+```
+
+osd_commont_t クラスの m_debugger プライベートメンバが debug_module へのポインタなので、ここで debug_module::wait_for_debugger() につながる。
+
+debug_gdbstub クラスの基底クラスに osd_module を持つので、ここで debugモジュールとのつながりが得られる。
+
+つまり、osd_common_t パートの初期化の際に m_debugger に適切な debug_module を差し込むと debug_module::wait_for_debugger が呼び出される。
+
+#### m_debugger に debug_module を差し込む
+
+running_machne::m_debugger は debuger_manager クラスで、debug_module クラスではないが、
+
+running_machne::start() 中で debug_flags & DEBUG_FLAG_ENABLED が立っていれば、
+
+```
+m_debugger = std::make_unique<debugger_manager>(*this);
+```
+
+で初期化される。直接関係ない。
+
+osd_common_t::init_subsystems() 中で、
+
+```
+m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
+```
+
+で初期化される。
+
+init_subsystems() を呼び出すのは、windows_osd_interface::init(), sdl_osd_interface::init() の中である。
+
+> tty_osd_interface クラスを sdl_osd_interface に倣って派生させるか。
+
+たぶん、
+
+* tty_osd_interface を作成し、init() で初期化する。
+
+#### osd_common_t::init を呼び出すのは？
+
+そろそろ running_machine あたりにたどり着いてもよさそうだが。
+
+m_machine.osd() は、m_manager.osd() を呼ぶ。
+
+running_machine に差し込まれた m_manager (machine_manager クラス)のosd()を呼び出す。
+
+m_manager.osd() は、osd_interface & m_osd を返す。なので、machine_manager に osd を差し込むことになる。
+
+machine_manager クラスも running_machine *m_machine メンバを持っているので、machine_manager クラスと running_machine クラスは相互に指している。
+
+running_machine::start() の中で、m_manager.osd().init(*this) を呼び出すので、ここでつながる。
+
+```
+	// init the OSD layer
+	m_manager.osd().init(*this);
+```
+
+#### zexallでどうするか？
+
+zexall_machine_manager を machine_manager から派生させて zexall_machine_manager::instance() 内部で、m_manager を初期化、m_manager を返している。
+
+tty_osd_interface クラスを作成し、tty_osd_interface::init() 関数をダミーで作る。
+
+running_machine::start() が呼び出されるか、start() 中で tty_osd_interface::init() が呼び出されるかが最初のチェックポイントとなるだろう。ここを目指して試作する。
+
+以下の process_sourcefile はごみとなる、UNUSED.md送り。
+
+## tty_osd_interface を作る。
+
+
