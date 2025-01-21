@@ -4259,3 +4259,56 @@ m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
 
 で差し込まれるので、select_module_options で tty_debug_module が選択されるように表を作る。
 
+## 2025/1/21: tty_osd_interface 作ってみた。
+
+* src/osd/tty/video.cpp も必要だった。(video_config構造体がそこここで参照されていた)
+* emuz80 で tty_osd_interface::init() 呼び出された。
+
+相変わらず、重い `video.cpp`/`window.cpp` を抱えたままだが、これを抱えることでビルドがつつがなく進む。
+
+よし、先に進もう。
+
+## debug_tty 作ってみた。
+
+* tty.cpp 最後で DEBUG_TTY で MODULE_DEFINITION した。
+* osdobj_common.cpp 途中で REGISTER_MODULE した。
+
+この状態で、emuz80 起動しても init_debugger() は呼び出されない。
+
+しらべてみると、src/emu/machine.cpp で、debug_flags & DEBUG_FLAG_ENABLED ビットが立っている必要がある。
+
+running_machine のコンストラクタの最後で、
+
+```
+	// fetch core options
+	if (options().debug() || 1)	// make it true temporally
+		debug_flags = (DEBUG_FLAG_ENABLED | DEBUG_FLAG_CALL_HOOK) | (DEBUG_FLAG_OSD_ENABLED);
+
+```
+
+とあるので、ここを強制的にtrue にしてみたら、init_debugger が呼び出された。
+
+```
+kuma@LAURELEY:~/mame-sbc$ !.
+./emuz80
+debug_tty constructor invoked
+emuz80_state: constructor
+uart_device: constructor, baudrate = 9600
+tty_osd_interface::init: invoked
+debug_tty::init_debugger:
+uart_device::device_start, tick = 1000
+reset_input_device
+warning_txt = -1
+uart_device::device_reset
+machine_reset
+
+␦txd: overrun
+Z80 BASIC Ver 4.7b
+Copyright (C) 1978 by Microsoft
+24190 Bytes free
+Ok
+```
+
+`debug_tty::init_debugger:` が見える。よし、デバッガ(`debug_tty`)が呼び出されている。
+
+

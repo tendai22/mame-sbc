@@ -35,7 +35,8 @@ typedef uint64_t HashT;
 #define GL_SILENCE_DEPRECATION (1)
 #include "osdmac.h"
 #else
-#include "osdsdl.h"
+//#include "osdsdl.h"
+#include "osdtty.h"
 #include "sdlglcontext.h"
 #endif
 

@@ -91,7 +91,7 @@ running_machine::running_machine(const machine_config &_config, machine_manager 
 		device.set_machine(*this);
 
 	// fetch core options
-	if (options().debug())
+	if (options().debug() || 1)	// make it true temporally
 		debug_flags = (DEBUG_FLAG_ENABLED | DEBUG_FLAG_CALL_HOOK) | (DEBUG_FLAG_OSD_ENABLED);
 }
 
