@@ -4311,4 +4311,20 @@ Ok
 
 `debug_tty::init_debugger:` が見える。よし、デバッガ(`debug_tty`)が呼び出されている。
 
+### options 引数オプションの解釈
+
+結局のところ、emulator_info::start_frontend() の中で、args を順に回して解釈、設定する必要がある。
+
+* 現在のところ、args を解釈するコードは main.cpp に入っていない。
+* オプションの設定は、emulator_info::start_frontend() 内部で、以下のようなコードを呼び出して行う。
+
+```
+	options.set_value(OPTION_DEBUG, true, OPTION_PRIORITY_MAXIMUM);
+	options.set_value(OPTION_THROTTLE, false, OPTION_PRIORITY_MAXIMUM);
+```
+
+* 各エミュレータごとに main.cpp を別に取っているので、共通の argparse コードで実装するべき。
+* 現在はOPTION_DEBUG 行のコメントアウトを外して、上記 true を有効にしている。
+
+これで、debugger が有効になっている。
 
