@@ -4328,3 +4328,60 @@ Ok
 
 これで、debugger が有効になっている。
 
+### OSD_DEBUG_PROVIDER
+
+```
+m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
+```
+
+で差し込まれるので、select_module_options で tty_debug_module が選択されるように表を作る。
+
+select_module_options の定義は、
+
+```
+	template<class C>
+	C &select_module_options(const std::string &opt_name)
+	{
+		std::string opt_val = options().exists(opt_name) ? options().value(opt_name) : "";
+		if (opt_val == "auto")
+		{
+			opt_val = "";
+		}
+		else if (!m_mod_man.type_has_name(opt_name.c_str(), opt_val.c_str()))
+		{
+			osd_printf_warning("Value %s not supported for option %s - falling back to auto\n", opt_val, opt_name);
+			opt_val = "";
+		}
+		return m_mod_man.select_module<C>(*this, options(), opt_name.c_str(), opt_val.c_str());
+	}
+```
+
+なので、m_mod_man を見る。osd_module_manager クラスなので、
+
+* osd_module_manager::get_module_generic で検索する。
+* この中で、osd_module_manager::get_module_index で検索している。
+* m_modules の表をリニアサーチしている。
+
+```
+	for (int i = 0; m_modules.size() > i; i++)
+	{
+		if ((m_modules[i]->type() == type) && (!name[0] || (m_modules[i]->name() == name)))
+			return i;
+	}
+	return -1;
+```
+
+### osd_printf_verbose
+
+```
+void osd_common_t::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
+```
+
+につながる。実際にこのcallbackは呼び出されている。
+
+```
+	options.set_value(OPTION_VERBOSE, true, OPTION_PRIORITY_MAXIMUM);
+```
+
+で、OPTION_VERBOSE を設定すると osd_printf_verbose 出力が出るようになる。
+

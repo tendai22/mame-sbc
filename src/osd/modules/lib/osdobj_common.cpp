@@ -370,6 +370,7 @@ void osd_common_t::update_option(const std::string &key, std::vector<std::string
 //-------------------------------------------------
 void osd_common_t::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
 {
+	fprintf(stderr, "output_callback: %d\n", (int)channel);
 	switch (channel)
 	{
 	case OSD_OUTPUT_CHANNEL_ERROR:
