@@ -123,6 +123,7 @@ debugger_commands::debugger_commands(running_machine& machine, debugger_cpu& cpu
 	: m_machine(machine)
 	, m_console(console)
 {
+	fprintf(stderr, "debugger_commands constructor\n");
 	using namespace std::placeholders;
 	m_global_array = std::make_unique<global_entry []>(MAX_GLOBALS);
 

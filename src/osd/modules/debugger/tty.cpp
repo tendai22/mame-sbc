@@ -49,6 +49,7 @@ void debug_tty::init_debugger(running_machine &machine)
 
 void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 {
+	fprintf(stderr, "debug_tty: wait_for_debugger\n");
 	m_machine->debugger().console().get_visible_cpu()->debug()->go();
 }
 

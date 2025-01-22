@@ -370,7 +370,7 @@ void osd_common_t::update_option(const std::string &key, std::vector<std::string
 //-------------------------------------------------
 void osd_common_t::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
 {
-	fprintf(stderr, "output_callback: %d\n", (int)channel);
+	//fprintf(stderr, "output_callback: %d\n", (int)channel);
 	switch (channel)
 	{
 	case OSD_OUTPUT_CHANNEL_ERROR:
@@ -697,6 +697,7 @@ void osd_common_t::init_subsystems()
 	m_font_module = &select_module_options<font_module>(OSD_FONT_PROVIDER);
 	m_sound = &select_module_options<sound_module>(OSD_SOUND_PROVIDER);
 
+	fprintf(stderr, "m_debugger assigned in osd_common_t::init_subsystem\n");
 	m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
 
 	select_module_options<netdev_module>(OSD_NETDEV_PROVIDER);

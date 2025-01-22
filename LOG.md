@@ -4081,7 +4081,7 @@ std::unique_ptr<device_debug> m_debug;
 set_execution_stopped() 関数。m_execution_state に STOPPED を代入するだけ。
 
 ```
-void debugger_cop::set_execution_stopped() { m_execution_state = exec_state::STOPPED; }
+void debugger_cpu::set_execution_stopped() { m_execution_state = exec_state::STOPPED; }
 ```
 
 命令実行中の hook では、m_executon_state の値を書き換えるだけ。実際のデバッグコマンド入力と実行は別のコンテキストにある。
@@ -4257,7 +4257,7 @@ running_machine::start() が呼び出されるか、start() 中で tty_osd_inter
 m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
 ```
 
-で差し込まれるので、select_module_options で tty_debug_module が選択されるように表を作る。
+で差し込まれるので、select_module_options で tty_debug_module(いや debug_tty) が選択されるように表を作る。
 
 ## 2025/1/21: tty_osd_interface 作ってみた。
 
@@ -4334,7 +4334,7 @@ Ok
 m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
 ```
 
-で差し込まれるので、select_module_options で tty_debug_module が選択されるように表を作る。
+で差し込まれるので、select_module_options で debug_tty のインスタンスが選択されるように表を作る。
 
 select_module_options の定義は、
 
@@ -4371,7 +4371,28 @@ select_module_options の定義は、
 	return -1;
 ```
 
+### m_debugger に強引に差し込むには?
+
+```
+osd_module &osd_module_manager::select_module(osd_interface &osd, const osd_options &options, const char *type, const char *name)
+
+```
+
+なので、osd_module または派生クラスを強引に差し込めばよい。
+
+osd_common_t::init_subsystems() 中で、
+
+```
+m_debugger = &select_module_options<debug_module>(OSD_DEBUG_PROVIDER);
+```
+
+で差し込まれる。m_debugger に debug_tty のインスタンスを代入すればよいのだろう。
+
 ### osd_printf_verbose
+
+話は変わるが、この機会に osd_printf_verbose 他を osd_printf_XXXX を調べた。
+
+osd_printf_verbose は、osd_vprintf_verbose を呼び出しており、osd_vprintf_verbose が、output_callback を呼び出している。
 
 ```
 void osd_common_t::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
@@ -4380,8 +4401,178 @@ void osd_common_t::output_callback(osd_output_channel channel, const util::forma
 につながる。実際にこのcallbackは呼び出されている。
 
 ```
+//-------------------------------------------------
+//  output_callback  - callback for osd_printf_...
+//-------------------------------------------------
+void osd_common_t::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
+{
+	switch (channel)
+	{
+	case OSD_OUTPUT_CHANNEL_ERROR:
+	case OSD_OUTPUT_CHANNEL_WARNING:
+		util::stream_format(std::cerr, args);
+		break;
+	case OSD_OUTPUT_CHANNEL_INFO:
+	case OSD_OUTPUT_CHANNEL_LOG:
+		util::stream_format(std::cout, args);
+		break;
+	case OSD_OUTPUT_CHANNEL_VERBOSE:
+		if (verbose()) util::stream_format(std::cout, args);
+		break;
+	case OSD_OUTPUT_CHANNEL_DEBUG:
+#ifdef MAME_DEBUG
+		util::stream_format(std::cout, args);
+#endif
+		break;
+	default:
+		break;
+	}
+}
+```
+
+osd_printf_verbose の引数が出力されるには、
+
+```
 	options.set_value(OPTION_VERBOSE, true, OPTION_PRIORITY_MAXIMUM);
 ```
 
 で、OPTION_VERBOSE を設定すると osd_printf_verbose 出力が出るようになる。
 
+osd_printf_debug の引数が出力されるようにするには、マクロ MAME_DEBUG をtrueにするとよい。
+
+### m_debugger への代入、されていた。
+
+`m_debugger =` への代入は2か所あるが、いずれも通過している。そのあと、`debug_tty::init_debugger` が呼び出されている。ということで、現状で debug_tty の初期化とデバッガの呼び出し準備が整っているのだろう。次は 
+
+この状態で、debug_tty::debuger_update は常時呼び出されている。
+
+wait_for_debugger の呼び出し条件を再度確認する。
+
+### CPU実行側のシングルステップ処理
+
+```
+void device_debug::instruction_hook(offs_t curpc)
+{
+	...
+	if (!debugcpu.is_stopped() && (m_flags & DEBUG_FLAG_STEPPING_ANY) != 0)
+	{
+		bool do_step = true;
+		if ((m_flags & (DEBUG_FLAG_CALL_IN_PROGRESS | DEBUG_FLAG_TEST_IN_PROGRESS)) != 0)
+		{
+			if (curpc == m_stepaddr)
+			{
+				if ((~m_flags & (DEBUG_FLAG_TEST_IN_PROGRESS | DEBUG_FLAG_STEPPING_BRANCH_FALSE)) == 0)
+				{
+					debugcpu.set_execution_stopped();
+					do_step = false;
+				}
+	...
+
+```
+なので、debugcpu.m_flags に DEBUG_FLAG_TEST_IN_PROGRESS を立てればよさそうだ。
+
+### breakpoint を設定する。
+
+ここまで来たら、コードを触るよりも breakpoint をセットして様子を見たい。
+
+debugger_command::execute_bpset の中で、
+
+```
+	int const bpnum = debug->breakpoint_set(address, condition.is_empty() ? nullptr : condition.original_string(), action);
+```
+
+で設定している様子。debug は、device_debug クラスのようだ。
+
+debugger_commands のコンストラクタ内で、execute_bpset 呼び出しのコマンドが登録されている。ここから、"bpset" または "bp" で設定できるようだ。
+
+```
+	m_console.register_command("bpset",     CMDFLAG_NONE, 1, 3, std::bind(&debugger_commands::execute_bpset, this, _1));
+	m_console.register_command("bp",        CMDFLAG_NONE, 1, 3, std::bind(&debugger_commands::execute_bpset, this, _1));
+```
+
+コマンド登録先は、m_commandlist らしい。
+
+コマンド実行関数は、
+
+```
+CMDERR debugger_console::internal_execute_command(bool execute, std::vector<std::string_view> &params)
+```
+
+である。internal_execute_command を呼び出すところは、
+
+```
+CMDERR debugger_console::internal_parse_command(std::string_view command, bool execute)
+```
+
+である。command 文字列を解釈してコマンドを実行している(この中でinternal_execute_command を呼び出している)。
+
+internal_parse_command の呼び出しは、
+
+```
+CMDERR debugger_console::execute_command(std::string_view command, bool echo)
+```
+
+であり、これを呼び出すところは、
+
+```
+CMDERR debugger_console::execute_command(std::string_view command, bool echo)
+```
+
+である。execute_command を呼び出す個所は多い。debugcpu.cpp 内部でも多数ある。
+
+デバッガループは、
+
+```
+void debugger_console::process_source_file()
+```
+
+である。
+
+* instruction_hook() の中で、 `debugcpu.is_stopped()` であれば、 `process_source_file` が呼び出される。
+* process_source_file の中で、 `m_source_file` が非ゼロであれば、`std::getline` でコマンド行を読み込んで実行、のループを繰り返す。
+
+CPUを止めてしまうと実行最初からデバッガループに入る。
+
+m_source_file は、
+
+```
+std::unique_ptr<std::istream> m_source_file;        // script source file
+```
+
+である。`debugger_console::source_script(const char *file)` で渡したファイル名で初期化される。
+
+ssource_script は、
+
+1. オプション debug_script で指定したファイル名
+
+'''
+const char* name = m_machine.options().debug_script();
+	if (name[0] != 0)
+		m_console.source_script(name);
+'''
+
+2. debugger_commands::execute_source による。"source" コマンド
+
+void debugger_commands::execute_source(const std::vector<std::string_view> &params)
+
+起動時に `m_console.source_script("/dev/tty");` を入れて様子を見よう。
+
+あとは、debugcpu::is_stopped() にすること。TCPソケットに source_script を繋ぎこんで様子を見るか。
+
+* telnetd をある pty に対して起動しておく。
+* emuz80 起動時にそのptyデバイスに対してsource_scriptを実行する。
+
+かな。telnetd で pty を待てるなら、telnet コマンドで別コンソールからデバッガを制御できるようになる。たぶん、これが最初の目標になる。
+
+### デバッガの動作確認
+
+最初は /dev/tty で様子を見る、やな。
+
+初期化時にデバッグコマンドを叩いておく、
+
+* debugger_cpu::set_execution_stopped() を呼び出す。
+* m_console.source_script("/dev/tty");
+* "bpset 0" しておく。
+* "go 0" する。
+
+これで実行開始するかどうかを見る。
