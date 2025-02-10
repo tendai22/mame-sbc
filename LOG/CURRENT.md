@@ -547,3 +547,192 @@ void debugger_commands::execute_source(const std::vector<std::string_view> &para
 * "go 0" する。
 
 これで実行開始するかどうかを見る。
+
+### 久々に(2/10)
+
+1/23 以来3週間近く空いた。
+
+* m_console は debugger_manager のメンバ。
+* debugger_manager クラスは、running_machine.m_debugger メンバで初期化される。
+* 初期化は、`(debug_flags & DEBUG_FLAG_ENABLED) != 0` の時に行われる。
+* `fprintf(stderr, "m_debugger: assigned in running_machine::start\n");`
+が表示されているので、この if 節には入っている。m_debugger は初期化されている。
+* `void debug_tty::wait_for_debugger(device_t &device, bool firststop)`
+が呼び出されている。
+
+### m_console.source_script("/dev/tty");
+
+を呼び出してみた。確かに std::getline(*m_script_file, buf) に来ているが、ここでキーを叩いても無反応である。
+
+### wait_for_debugger 内部で行入力ループを回した。
+
+これはうまくいった。リターンキーを叩くと実行再開した。やはり go() で実行再開するらしい。
+
+```
+void debug_tty::wait_for_debugger(device_t &device, bool firststop)
+{
+	fprintf(stderr, "debug_tty: wait_for_debugger\n");
+	if (firststop) {
+		fprintf(stderr, "wait_for_debugger: first stop\n");
+	}
+	fprintf(stderr, ">> ");
+	fflush(stderr);
+	int ch;
+	while ((ch = getch()) > 0) {
+		if (ch == '\n' || ch == '\r') {
+			fprintf(stderr, "restart\n");
+			break;
+		}
+		putch(ch);
+	}
+	m_machine->debugger().console().get_visible_cpu()->debug()->go();
+}
+```
+
+### コマンド実行させてみるか。
+
+execute_command で検索掛けると、
+
+```
+void MainWindow::toggleBreakpointAtCursor(bool changedTo)
+{
+	debug_view_disasm *const dasmView = m_dasmFrame->view()->view<debug_view_disasm>();
+	if (dasmView->cursor_visible() && (m_machine.debugger().console().get_visible_cpu() == dasmView->source()->device()))
+	{
+		offs_t const address = dasmView->selected_address();
+		device_debug *const cpuinfo = dasmView->source()->device()->debug();
+
+		// Find an existing breakpoint at this address
+		const debug_breakpoint *bp = cpuinfo->breakpoint_find(address);
+
+		// If none exists, add a new one
+		std::string command;
+		if (!bp)
+			command = string_format("bpset 0x%X", address);
+		else
+			command = string_format("bpclear 0x%X", bp->index());
+		m_machine.debugger().console().execute_command(command, true);
+		m_machine.debug_view().update_all();
+		m_machine.debugger().refresh_display();
+	}
+}
+```
+
+こんなコードが見つかったから,
+
+```
+m_machine.debugger().console().execute_command(command, true);
+```
+
+これでいいんだろう。
+
+### uint8_t buf[MAXBUF] を食わせてもコマンドを実行する。
+
+char 型バッファにコマンド文字列を読み込ませて execute_command の引数に渡してもコマンドが呼び出された。
+
+```
+#define MAXBUF 80
+	int ch, i;
+	uint8_t buf[MAXBUF];
+	i = 0;
+	while (i < MAXBUF && (ch = getch()) > 0) {
+		if (ch == '\n' || ch == '\r') {
+			fprintf(stderr, " EOL\n");
+			buf[i] = '\0';
+			break;
+		}
+		buf[i++] = ch;
+		putch(ch);
+	}
+	// execute_commands
+	m_machine->debugger().console().execute_command((const char *)buf, true);
+```
+
+execute_help の先頭に fprintf かませて、help と入力すると fprintfメッセージが出た。
+しかし、ヘルプメッセージが表示されていない。
+
+```
+void debugger_commands::execute_help(const std::vector<std::string_view> &params)
+{
+	fprintf(stderr, "execute_help: doing\n");
+	if (params.size() == 0)
+		m_console.printf_wrap(80, "%s\n", debug_get_help(std::string_view()));
+	else
+		m_console.printf_wrap(80, "%s\n", debug_get_help(params[0]));
+}
+```
+
+m_console.printf_wrap が表示できていないのか。
+
+### class text_buffer
+
+デバッグコマンドの出力は、いったん text_buffer クラスのメンバに貯えられる。それを flush していないので、何も表示されないのだった。
+
+text_buffer にたまったメッセージをフラッシュする関数を作った。
+
+```
+void debug_tty::flush_text_buffer(void)
+{
+	text_buffer &textbuf = m_machine->debugger().console().get_console_textbuf();
+	for (std::string_view line_info : text_buffer_lines(textbuf))
+	{
+		fwrite(line_info.data(), sizeof(char), line_info.length(), stderr);
+		fputc('\n', stderr);
+	}
+}
+```
+
+### デバッガのメインループ
+
+コマンド入力を受けて、実行、goコマンドを得るとデバッガを抜けて実行再開、というメインループを構築した。
+
+```
+	flush_text_buffer();
+	while (true) {
+		fprintf(stderr, ">> ");
+		fflush(stderr);
+		i = getline(buf, MAXBUF);
+		if (strcmp((const char *)buf, "go") == 0) {
+			m_machine->debugger().console().get_visible_cpu()->debug()->go();
+			break;
+		}
+		// execute_commands
+		if (i > 0) {
+			m_machine->debugger().console().execute_command((const char *)buf, true);
+			flush_text_buffer();
+		}
+	}
+```
+
+getline は自作で、DEL or Ctrl-H で1文字消去、リターンで抜けてくる。debug_tty::getch/putch を使用している。
+
+これで、MAME debugger が動くようになった。
+
+```
+m_debugger: assigned in running_machine::start
+debugger_commands constructor
+debug_tty::init_debugger:
+uart_device::device_start, tick = 1000
+reset_input_device
+uart_device::device_reset
+machine_reset
+debug_tty: wait_for_debugger
+wait_for_debugger: first stop
+Currently targeting emuz80 (emuz80 (Z80 with PIC18F47Q53))
+>> bpset 0 EOL
+n = 7
+execute_command: bpset 0
+echo: bpset 0
+pos = 0
+[b][p][s][e][t][ ][0]command: bpset 0
+command: bpset
+Currently targeting emuz80 (emuz80 (Z80 with PIC18F47Q53))
+>bpset 0
+Breakpoint 1 set
+>>
+```
+
+あらら、前のメッセージがまた出てきている。text_buffer をクリアしないといかんですね。
+
+
+
