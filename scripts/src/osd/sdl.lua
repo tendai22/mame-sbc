@@ -345,7 +345,8 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/modules/file",
 		MAME_DIR .. "src/osd/modules/render",
 		MAME_DIR .. "3rdparty",
-		MAME_DIR .. "src/osd/sdl",
+		--MAME_DIR .. "src/osd/sdl",
+		MAME_DIR .. "src/osd/tty",
 	}
 
 	if _OPTIONS["targetos"]=="macosx" then
@@ -395,15 +396,24 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/osdepend.h",
 		MAME_DIR .. "src/osd/modules/osdwindow.cpp",
 		MAME_DIR .. "src/osd/modules/osdwindow.h",
-		MAME_DIR .. "src/osd/sdl/osdsdl.cpp",
-		MAME_DIR .. "src/osd/sdl/osdsdl.h",
-		MAME_DIR .. "src/osd/sdl/sdlmain.cpp",
-		MAME_DIR .. "src/osd/sdl/sdlopts.cpp",
-		MAME_DIR .. "src/osd/sdl/sdlopts.h",
-		MAME_DIR .. "src/osd/sdl/sdlprefix.h",
-		MAME_DIR .. "src/osd/sdl/video.cpp",
-		MAME_DIR .. "src/osd/sdl/window.cpp",
-		MAME_DIR .. "src/osd/sdl/window.h",
+		--MAME_DIR .. "src/osd/sdl/osdsdl.cpp",
+		--MAME_DIR .. "src/osd/sdl/osdsdl.h",
+		--MAME_DIR .. "src/osd/sdl/sdlmain.cpp",
+		--MAME_DIR .. "src/osd/sdl/sdlopts.cpp",
+		--MAME_DIR .. "src/osd/sdl/sdlopts.h",
+		--MAME_DIR .. "src/osd/sdl/sdlprefix.h",
+		--MAME_DIR .. "src/osd/sdl/video.cpp",
+		--MAME_DIR .. "src/osd/sdl/window.cpp",
+		--MAME_DIR .. "src/osd/sdl/window.h",
+		MAME_DIR .. "src/osd/tty/osdtty.cpp",
+		MAME_DIR .. "src/osd/tty/osdtty.h",
+		MAME_DIR .. "src/osd/tty/ttymain.cpp",
+		MAME_DIR .. "src/osd/tty/ttyopts.cpp",
+		MAME_DIR .. "src/osd/tty/ttyopts.h",
+		MAME_DIR .. "src/osd/tty/ttyprefix.h",
+		MAME_DIR .. "src/osd/tty/video.cpp",
+		MAME_DIR .. "src/osd/tty/window.cpp",
+		MAME_DIR .. "src/osd/tty/window.h",
 	}
 
 project ("ocore_" .. _OPTIONS["osd"])

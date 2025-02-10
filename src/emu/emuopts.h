@@ -437,7 +437,7 @@ public:
 
 	// core debugging options
 	bool log() const { return bool_value(OPTION_LOG); }
-	bool debug() const { return bool_value(OPTION_DEBUG); }
+	bool debug() const { fprintf(stderr, "options.debug: %d\n", bool_value(OPTION_DEBUG)); return bool_value(OPTION_DEBUG); }
 	bool verbose() const { return bool_value(OPTION_VERBOSE); }
 	bool oslog() const { return bool_value(OPTION_OSLOG); }
 	const char *debug_script() const { return value(OPTION_DEBUGSCRIPT); }

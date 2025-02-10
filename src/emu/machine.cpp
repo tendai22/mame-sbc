@@ -91,7 +91,7 @@ running_machine::running_machine(const machine_config &_config, machine_manager 
 		device.set_machine(*this);
 
 	// fetch core options
-	if (options().debug())
+	if (options().debug())	// make it true temporally
 		debug_flags = (DEBUG_FLAG_ENABLED | DEBUG_FLAG_CALL_HOOK) | (DEBUG_FLAG_OSD_ENABLED);
 }
 
@@ -198,6 +198,7 @@ void running_machine::start()
 	// initialize the debugger
 	if ((debug_flags & DEBUG_FLAG_ENABLED) != 0)
 	{
+		fprintf(stderr, "m_debugger: assigned in running_machine::start\n");
 		m_debug_view = std::make_unique<debug_view_manager>(*this);
 		m_debugger = std::make_unique<debugger_manager>(*this);
 	}

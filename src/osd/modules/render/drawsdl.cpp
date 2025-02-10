@@ -17,7 +17,8 @@
 #if defined(OSD_SDL)
 
 // from specific OSD implementation
-#include "sdlopts.h"
+//#include "sdlopts.h"
+#include "ttyopts.h"
 #include "window.h"
 
 // general OSD headers

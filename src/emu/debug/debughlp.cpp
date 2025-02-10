@@ -2050,11 +2050,14 @@ private:
 public:
 	std::string_view find(std::string_view tag)
 	{
+		fprintf(stderr, "help_manager::instance::find: %s\n", tag.data());
 		// find a cached exact match if possible
 		std::string const lower = strmakelower(tag);
 		auto const found = m_help_list.find(lower);
-		if (m_help_list.end() != found)
+		if (m_help_list.end() != found) {
+			fprintf(stderr, "found: %s\n", found->second);
 			return found->second;
+		}
 
 		// cache more entries while searching for an exact match
 		while (std::end(f_static_help_list) != m_uncached_help)

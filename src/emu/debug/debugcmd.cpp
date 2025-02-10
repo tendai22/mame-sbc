@@ -123,6 +123,7 @@ debugger_commands::debugger_commands(running_machine& machine, debugger_cpu& cpu
 	: m_machine(machine)
 	, m_console(console)
 {
+	fprintf(stderr, "debugger_commands constructor\n");
 	using namespace std::placeholders;
 	m_global_array = std::make_unique<global_entry []>(MAX_GLOBALS);
 
@@ -439,6 +440,7 @@ void debugger_commands::global_set(global_entry *global, u64 value)
 
 void debugger_commands::execute_help(const std::vector<std::string_view> &params)
 {
+	fprintf(stderr, "execute_help: doing\n");
 	if (params.size() == 0)
 		m_console.printf_wrap(80, "%s\n", debug_get_help(std::string_view()));
 	else
