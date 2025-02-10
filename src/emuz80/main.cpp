@@ -82,7 +82,7 @@ int emulator_info::start_frontend(emu_options &options, osd_interface &osd, std:
 {
 	options.set_value(OSDOPTION_VIDEO, "none", OPTION_PRIORITY_MAXIMUM);
 	options.set_value(OSDOPTION_SOUND, "none", OPTION_PRIORITY_MAXIMUM);
-	//options.set_value(OPTION_DEBUG, true, OPTION_PRIORITY_MAXIMUM);
+	options.set_value(OPTION_DEBUG, true, OPTION_PRIORITY_MAXIMUM);
 	options.set_value(OPTION_THROTTLE, false, OPTION_PRIORITY_MAXIMUM);
 
 	emuz80_machine_manager::instance(options,osd)->start_http_server();

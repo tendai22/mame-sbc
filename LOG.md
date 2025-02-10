@@ -4026,3 +4026,209 @@ uint8_t sbc6800_state::uart_creg_r() {	return m_uart->status_r(); }
 `osd.h`, `osd_linux.c` を使わなくなりましたので、これらのソースを削除しました。
 
 ここで v0.996 タグを付与しました。
+
+## debugger を動かす。
+
+debug_gdbstub がある。TCPソケットで接続待ちする。
+
+親クラス debug_module では
+
+```
+class debug_module
+{
+public:
+	virtual ~debug_module() = default;
+
+	virtual void init_debugger(running_machine &machine) = 0;
+	virtual void wait_for_debugger(device_t &device, bool firststop) = 0;
+	virtual void debugger_update() = 0;
+};
+```
+
+宣言はこれだけ。
+
+osd モジュールから `m_debugger->init_debugger(machine());` で起動されている。zexall アプリから直接呼び出すというのはどうか？
+
+`running_machne::start()` 中に、`m_debugger` 初期化されている。
+
+```
+	// initialize the debugger
+	if ((debug_flags & DEBUG_FLAG_ENABLED) != 0)
+	{
+		m_debug_view = std::make_unique<debug_view_manager>(*this);
+		m_debugger = std::make_unique<debugger_manager>(*this);
+	}
+```
+
+`m_debugger` はもちろん `running_machine` クラスのメンバ変数である。
+
+emuz80 の中では、
+
+```
+	int emuz80_machine_manager::execute()
+	{
+		auto system = &GAME_NAME(emuz80);
+		machine_config config(*system, m_options);
+		running_machine machine(config, *this);
+		return machine.run(false);
+	}
+```
+
+で生成・初期化されているようだ。
+
+## device_scheduler::timeslice()
+
+ここで、
+
+```
+	bool call_debugger = ((machine().debug_flags & DEBUG_FLAG_ENABLED) != 0);
+	fprintf(stderr, "call_debugger = %x\n", call_debugger);
+```
+
+と書いておくと死ぬほど `call_debugger = 1` が出てくるので、running_machine コンストラクタで無理やり debug_flags をセットしておくと、デバッグ機能は有効になるようだ。
+
+`timeslise()` 中で、
+
+```
+	// note that this global variable cycles_stolen can be modified
+	// via the call to cpu_execute
+	exec->m_cycles_stolen = 0;
+	m_executing_device = exec;
+	*exec->m_icountptr = exec->m_cycles_running;
+	if (!call_debugger)
+		exec->run();
+	else
+	{
+		exec->debugger_start_cpu_hook(target);
+		exec->run();
+		exec->debugger_stop_cpu_hook();
+	}
+
+```
+
+なので、 `debugger_start_cpu_hook`, `debugger_stop_cpu_hook` が呼び出されているはず。
+
+これらは diexec.h で定義されている。
+
+```
+	// internal debugger hooks
+	void debugger_start_cpu_hook(const attotime &endtime)
+	{
+		if (device().machine().debug_flags & DEBUG_FLAG_ENABLED)
+			device().debug()->start_hook(endtime);
+	}
+	void debugger_stop_cpu_hook()
+	{
+		if (device().machine().debug_flags & DEBUG_FLAG_ENABLED)
+			device().debug()->stop_hook();
+	}
+```
+
+device().debug()->start_hook(endtime), stop_hook() を見る。
+
+debug_device::start_hook(), stop_hook() である。start_hookは確かに呼び出されている。
+
+ここではシングルステップと関係なさそうだ。先に行く。
+
+## void device_debug::instruction_hook(offs_t curpc)
+
+```
+//-------------------------------------------------
+//  instruction_hook - called by the CPU cores
+//  before executing each instruction
+//-------------------------------------------------
+
+void device_debug::instruction_hook(offs_t curpc)
+```
+
+これが命令実行ごとに呼び出されるらしい。確かに呼び出された。
+
+running_machine コンストラクタで、
+
+```
+//debug_flags = (DEBUG_FLAG_ENABLED | DEBUG_FLAG_CALL_HOOK) | (DEBUG_FLAG_OSD_ENABLED);
+```
+
+コメントアウトすると呼び出されない。これだね。
+
+この中で、single step, breakpoints, をハンドルしている。
+
+この中で、
+
+```
+	if (machine.debug_flags & DEBUG_FLAG_OSD_ENABLED)
+		machine.osd().wait_for_debugger(m_device, firststop);
+```
+
+と、wait_for_debugger(); を呼び出している。この中でデバッガとの対話すればよいだろう。
+
+## running_machine::schedule_exit()
+
+これが実行停止らしい。デバッガからは `debugger_commands::execute_quit()` .
+
+uart_deive::getch の中から Ctrl-D でいきなり呼び出してみた。コアを吐いて落ちた。
+
+gdb を起動したら、
+
+```
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) y
+Debuginfod has been enabled.
+To make this setting permanent, add 'set debuginfod enabled on' to .gdbinit.
+Downloading separate debug info for system-supplied DSO at 0x7ffff7fc3000
+Downloading separate debug info for /lib/x86_64-linux-gnu/libSDL2-2.0.so.0
+...
+```
+
+とデフォルトのライブラリ情報をダウンロードしてきた。自作 GCC の時は自前のライブラリ情報を教えねばならないかもしれない。
+
+それはさておき、Ctrl-D で抜けると。
+
+```
+Copyright (C) 1978 by Microsoft
+24190 Bytes free
+Ok
+exit
+
+Program received signal SIGSEGV, Segmentation fault.
+0x0000555556a31fa5 in render_manager::config_save(config_type, util::xml::data_node*) ()
+(gdb) bt
+#0  0x0000555556a31fa5 in render_manager::config_save(config_type, util::xml::data_node*) ()
+#1  0x0000555556b0887e in configuration_manager::save_xml(emu_file&, config_type) ()
+#2  0x0000555556b0a2c0 in configuration_manager::save_settings() ()
+#3  0x0000555556a1cbac in running_machine::run(bool) ()
+#4  0x000055555571f030 in emuz80_machine_manager::execute (this=this@entry=0x5555574ea4f0) at ../../../../../src/emuz80/main.cpp:62
+#5  0x000055555571f12f in emulator_info::start_frontend (options=..., osd=warning: RTTI symbol not found for class 'sdl_osd_interface'
+..., args=...) at ../../../../../src/emuz80/main.cpp:50
+#6  0x000055555571df9f in main ()
+(gdb)
+```
+
+`render_manager::config_save(config_type, util::xml::data_node*) ()`
+
+を調べる。
+
+この関数を3回呼び出して、3度目に、m_ui_target を参照してそこで落ちている。
+
+```
+	if (m_ui_target->index() != 0)
+```
+
+ということで、この if 節に m_ui_target != nullptr を追加した。これで exit が完了した。
+
+ただし、stty が戻らなかった。machine().schedule_exit() で強引に changemode(0); を呼び出して端末ドライバの設定が戻った、とりあえずこれで行く。
+
+#### exit まとめ
+
+`machine().schedule_exit()` でエミュレータを終了できる。
+
+uart_tty.cpp/.h: 
+
+* キー Ctrl-D を見て `machine().schedule_exit()` を呼び出す。
+* uart_device デストラクタで changemode(0) を呼び出す。
+
+src/emu/render.cpp:
+
+* config_save でポインタチェックを入れる。nullptr ならスキップでよさそうだ。
+
