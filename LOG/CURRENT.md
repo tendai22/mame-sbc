@@ -769,6 +769,8 @@ void debugger_commands::execute_source(const std::vector<std::string_view> &para
 
 を呼び出してみた。確かに std::getline(*m_script_file, buf) に来ているが、ここでキーを叩いても無反応である。
 
+結局、m_console.source_script を使わずに、wait_for_debugger の中でデバッグコマンドを処理する方針に切り替えた。
+
 ### wait_for_debugger 内部で行入力ループを回した。
 
 これはうまくいった。リターンキーを叩くと実行再開した。やはり go() で実行再開するらしい。
@@ -961,23 +963,49 @@ go(off_t targetpc = ~0) なので、無引数呼び出しは m_stopaddr に 0xff
 
 の動作確認した。これでデバッガループは一応完成。
 
-### まとめ: wait_for_debugger 中でのデバッガループ
+### デバッガループは不要なので再構成した。
+
+wait_for_debugger の first_step 引数は、ブレーク後最初だけ true になる。なので、プログラムカウンタダンプはfirst_step 引数が true のときだけ行えばよい。
+
+is_stopped チェックも不要のようだ。is_stopped でないと、wait_for_debugger が呼び出されないように見える。
+
+以上から、ループをやめてみた。下位手順で期待通り動いている。
+
+* ブレークポイントを 0x38 にセット、
+* go -> 0x38 で停止。
+* ブレークポイント1 を disable
+* go -> BASIC インタプリタが起動した。
+
+これで wait_for_debugger は一応完成。
+
+### まとめ: wait_for_debugger
 
 * 行入力を受けて、execute_command に食わせる。
-* is_stopped である限りループを回す。
+* first_step を見て、ブレーク後初回の処理を入れる。ここでは pc ダンプ。
+* getline でエコーバックは済ませているので、execute_command で false を指定する。
 
 ```
-	debugger_cpu &debugcpu = m_machine->debugger().cpu();
-	while (debugcpu.is_stopped()) {
-		fprintf(stderr, ">> ");
-		fflush(stderr);
-		i = getline(buf, MAXBUF);
-		// execute_commands
-		if (i > 0) {
-			m_machine->debugger().console().execute_command((const char *)buf, true);
-			flush_text_buffer();
-		}
+void debug_tty::wait_for_debugger(device_t &device, bool firststop)
+{
+	int i;
+	uint8_t buf[MAXBUF];
+
+	if (firststop) {
+		// get current pc
+		device_debug *debug = device.debug();
+		off_t curpc = debug->history_pc(0).first;
+		fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 	}
+	flush_text_buffer();
+	fprintf(stderr, ">> "); fflush(stderr);
+	i = getline(buf, MAXBUF);
+	// execute single command
+	if (i > 0) {
+		// false: no need to echoback, because getline already echoed it back
+		m_machine->debugger().console().execute_command((const char *)buf, false);
+		flush_text_buffer();
+	}
+}
 ```
 
 ここで使用している getline は自作の行入力ルーチンである。kbhit, getch も自作して、それを使って ^H, DEL の１文字消去のみ使用できる行入力となっている。ここはcompletion も使える getline ライブラリを使うようにしたい。
@@ -993,4 +1021,35 @@ go(off_t targetpc = ~0) なので、無引数呼び出しは m_stopaddr に 0xff
 	off_t curpc = debug->history_pc(0).first;
 	fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 ```
+
+#### まとめ: text_buffer
+
+* デバッガ各所で printf 系関数を呼ぶ。この出力が text_buffer にたまる。
+* debugtty.cpp 的には、stderr に書き出したい。
+* text_buffer から１行ごとに出力する。
+* flush_text_buffer(text_buffer)を作成した。
+* stderr に出力すると、出力済のデータはクリアする必要がある。text_buffer_clear を呼び出せばよい。
+
+```
+void debug_tty::flush_text_buffer(void)
+{
+	text_buffer &textbuf = m_machine->debugger().console().get_console_textbuf();
+	for (std::string_view line_info : text_buffer_lines(textbuf))
+	{
+		fwrite(line_info.data(), sizeof(char), line_info.length(), stderr);
+		fputc('\n', stderr);
+	}
+	text_buffer_clear(textbuf);
+}
+```
+
+### デバッガコマンドを試した。
+
+* bpset 4, go で0004で停止した。
+* s でステップ実行できた。
+* go でBASICインタプリタが起動した。
+
+次は、disasm とレジスタダンプだ。
+
+
 

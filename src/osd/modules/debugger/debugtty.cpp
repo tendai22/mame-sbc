@@ -67,25 +67,20 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 	int i;
 	uint8_t buf[MAXBUF];
 
-	// get current pc
-	device_debug *debug = device.debug();
-	off_t curpc = debug->history_pc(0).first;
-	fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 	if (firststop) {
-		fprintf(stderr, "wait_for_debugger: first stop\n");
+		// get current pc
+		device_debug *debug = device.debug();
+		off_t curpc = debug->history_pc(0).first;
+		fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 	}
 	flush_text_buffer();
-	// debugger command loop
-	debugger_cpu &debugcpu = m_machine->debugger().cpu();
-	while (debugcpu.is_stopped()) {
-		fprintf(stderr, ">> ");
-		fflush(stderr);
-		i = getline(buf, MAXBUF);
-		// execute_commands
-		if (i > 0) {
-			m_machine->debugger().console().execute_command((const char *)buf, true);
-			flush_text_buffer();
-		}
+	fprintf(stderr, ">> "); fflush(stderr);
+	i = getline(buf, MAXBUF);
+	// execute single command
+	if (i > 0) {
+		// false: no need to echoback, because getline already echoed it back
+		m_machine->debugger().console().execute_command((const char *)buf, false);
+		flush_text_buffer();
 	}
 }
 
@@ -125,7 +120,7 @@ int debug_tty::getline(uint8_t *buffer, int len)
 			continue;
 		}
 		if (ch == '\n' || ch == '\r') {
-			fprintf(stderr, " EOL\n");
+			fprintf(stderr, "\n");
 			buffer[i] = '\0';
 			break;
 		}

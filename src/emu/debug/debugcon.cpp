@@ -268,7 +268,6 @@ std::string_view debugger_console::trim_parameter(std::string_view param, bool k
 
 CMDERR debugger_console::internal_execute_command(bool execute, std::vector<std::string_view> &params)
 {
-	fprintf(stderr, "command: %s\n", params[0].data());
 	// no params is an error
 	if (params.empty())
 		return CMDERR::none();
@@ -279,7 +278,6 @@ CMDERR debugger_console::internal_execute_command(bool execute, std::vector<std:
 	while (pos < command_param.length() && !isspace(u8(command_param[pos])))
 		pos++;
 	const std::string command(strmakelower(command_param.substr(0, pos)));
-	fprintf(stderr, "command: %s\n", command.c_str());
 	while (pos < command_param.length() && isspace(u8(command_param[pos])))
 		pos++;
 	if (pos == command_param.length() && params.size() == 1)
@@ -339,11 +337,9 @@ CMDERR debugger_console::internal_parse_command(std::string_view command, bool e
 		std::string_view::size_type startpos = pos;
 
 		// find a semicolon or the end
-		fprintf(stderr, "pos = %lu\n", pos);
 		for (params.push_back(command.substr(pos)); !foundend && pos < len; pos++)
 		{
 			char c = command[pos];
-			fprintf(stderr, "[%c]", c);
 			if (instring)
 			{
 				if (c == '"' && command[pos - 1] != '\\')
@@ -417,12 +413,8 @@ CMDERR debugger_console::internal_parse_command(std::string_view command, bool e
 
 CMDERR debugger_console::execute_command(std::string_view command, bool echo)
 {
-	int n = command.length();
-	fprintf(stderr, "n = %d\n", n);
-	fprintf(stderr, "execute_command: %.*s\n", n, command.data());
 	// echo if requested
 	if (echo) {
-		fprintf(stderr, "echo: %.*s\n", n, command.data());
 		printf(">%s\n", command);
 	}
 
@@ -538,7 +530,6 @@ void debugger_console::process_source_file()
 			printf("I/O error, script processing terminated\n");
 		m_source_file.reset();
 	}
-	fprintf(stderr, "process_source_file: exit\n");
 }
 
 
