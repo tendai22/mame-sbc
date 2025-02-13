@@ -1048,8 +1048,82 @@ void debug_tty::flush_text_buffer(void)
 * bpset 4, go で0004で停止した。
 * s でステップ実行できた。
 * go でBASICインタプリタが起動した。
+* softreset でリセットできた。
+* hardreset でエミュレータをEXITしてしまった。
 
 次は、disasm とレジスタダンプだ。
 
+## 閑話休題
 
+LLC1 というマシンに行き当たった。
+
+* Z80 + PIO + CTC
+* 7セグLEDを8個
+* 64x16白黒スクリーン
+* フルキーボード、マトリックススキャン
+
+デイジーチェーン、ROM ロード、PIO/キーボードマトリックス、VRAMの作り方の参考になる。
+
+## disassembler
+
+* CPU固有の逆アセンブラ: z80_disassembler::disassemble(...):  
+  pc から1命令逆アセンブルして、結果を ostream &stream に吐き出す。
+* class util::disasm_interface: debugcpu.cpp 内部で多用されている。
+* debugcpu.cpp内部
+  + device_debug::tracer::update(offs_t cp)
+  + device_debug::prepare_for_step_overout(off_t pc)
+  この2箇所
+* tracer::update  
+  instruction_hook中で、m_trace が有効なら呼び出される。この1箇所のみ。
+* prepare_for_step_overout  
+  instruction_hook内で、step out/over 実行直前に呼ばれる。この1か所のみ。
+
+とりあえず fprintf(stderr, 入れてみるか)
+
+### prepare_for_step_overout を見る。
+
+* 中でtempなbreakpointの設定もしている。step 系命令を実行するときにここを通ると見た。
+* 内部で debug_disasm_buffer buffer を初期化して、適宜 
++ buffer.disassemble(...), 
++ buffer.disasssemble_info(pc), 
++ buffer.next_pc_wrap
++ buffer.data_get(これは compute_opcode_crc32の中で)  
+を呼び出している。
+
+trace 機能を有効にして動かしてみよう。書き出しファイル指定方法も見ておく。
+
+## レジスタダンプ
+
+z80.h を見る。
+
+* enum で、`Z80_PC = STATE_GENPC, Z80_SP = 1,
+	Z80_A, Z80_B, Z80_C, Z80_D, Z80_E, Z80_H, Z80_L,` を定義している。
+
+* Z80_B で検索する。`state_add` で登録している。
+
+```
+	// set up the state table
+	state_add(STATE_GENPC,     "PC",        m_pc.w).callimport();
+	state_add(STATE_GENPCBASE, "CURPC",     m_prvpc.w).callimport().noshow();
+	state_add(Z80_SP,          "SP",        SP);
+```
+
+* device_state_register はコンストラクタ、デストラクタのみという感じ。
+
+* キモは `class device_state_entry` っぽい。format もある。device_state_register の基底クラスでもある。
+
+* device_debug クラスのコンストラクタで、m_state->state_entries()を手繰ってループを回している。
+
+だいぶ近づいてきたが、もう少し調査が必要だ。execute_go_next_instruction のコマンドを実行してみるか。
+
+```
+while (count-- != 0)
+{
+	// disassemble the current instruction and get the length
+	u32 result = buffer.disassemble_info(pc);
+	pc = buffer.next_pc_wrap(pc, result & util::disasm_interface::LENGTHMASK);
+}
+```
+
+この辺りが複数行逆アセンブルの実行みたいだ。
 
