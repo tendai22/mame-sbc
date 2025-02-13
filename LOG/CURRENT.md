@@ -884,8 +884,11 @@ void debug_tty::flush_text_buffer(void)
 		fwrite(line_info.data(), sizeof(char), line_info.length(), stderr);
 		fputc('\n', stderr);
 	}
+	text_buffer_clear(textbuf);
 }
 ```
+
+最初、いったん出力済のメッセージを再度出力することが生じたので、`text_buffer_clear`を呼び出した。
 
 ### デバッガのメインループ
 
@@ -939,5 +942,55 @@ Breakpoint 1 set
 
 あらら、前のメッセージがまた出てきている。text_buffer をクリアしないといかんですね。
 
+### goコマンド特別扱いは避けたい。
 
+m_execution_state は exec_state::STOPPED か exec_state::RUNNING である。goコマンドを実行するとループを抜けたい。
+
+debugger_cpu::set_execution_running() を呼び出してセットする。
+
+go(off_t targetpc = ~0) なので、無引数呼び出しは m_stopaddr に 0xffff をセットすることになる。
+
+デバッガループの中で、"go" コマンド含めすべて execute_command で実行するようにした。
+
+ループ抜け出す条件として、「is_stopped() である限りループにいる」こととして、
+
+* ブレークポイントを 0x38 にセット、
+* go -> 0x38 で停止。
+* ブレークポイント1 を disable
+* go -> BASIC インタプリタが起動した。
+
+の動作確認した。これでデバッガループは一応完成。
+
+### まとめ: wait_for_debugger 中でのデバッガループ
+
+* 行入力を受けて、execute_command に食わせる。
+* is_stopped である限りループを回す。
+
+```
+	debugger_cpu &debugcpu = m_machine->debugger().cpu();
+	while (debugcpu.is_stopped()) {
+		fprintf(stderr, ">> ");
+		fflush(stderr);
+		i = getline(buf, MAXBUF);
+		// execute_commands
+		if (i > 0) {
+			m_machine->debugger().console().execute_command((const char *)buf, true);
+			flush_text_buffer();
+		}
+	}
+```
+
+ここで使用している getline は自作の行入力ルーチンである。kbhit, getch も自作して、それを使って ^H, DEL の１文字消去のみ使用できる行入力となっている。ここはcompletion も使える getline ライブラリを使うようにしたい。
+
+#### まとめ: プログラムカウンタの取り方
+
+* instruction_hook 中で m_pc_history[] に curpc が追加される。
+* history_pc(0) でヒストリの最新エントリが取り出せる。std::pair なので、メンバ first を指定する。 
+
+```
+	// get current pc
+	device_debug *debug = device.debug();
+	off_t curpc = debug->history_pc(0).first;
+	fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
+```
 

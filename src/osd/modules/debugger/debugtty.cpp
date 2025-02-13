@@ -1,8 +1,8 @@
 // license:BSD-3-Clause
-// copyright-holders:Miodrag Milanovic
+// copyright-holders:Norihiro Kumagai
 //============================================================
 //
-//  tty.cpp - stubs for linking when NO_DEBUGGER is defined
+//  debugtty.cpp - debugger for using traditional tty
 //
 //============================================================
 
@@ -67,26 +67,26 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 	int i;
 	uint8_t buf[MAXBUF];
 
-	fprintf(stderr, "debug_tty: wait_for_debugger\n");
+	// get current pc
+	device_debug *debug = device.debug();
+	off_t curpc = debug->history_pc(0).first;
+	fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 	if (firststop) {
 		fprintf(stderr, "wait_for_debugger: first stop\n");
 	}
 	flush_text_buffer();
-	while (true) {
+	// debugger command loop
+	debugger_cpu &debugcpu = m_machine->debugger().cpu();
+	while (debugcpu.is_stopped()) {
 		fprintf(stderr, ">> ");
 		fflush(stderr);
 		i = getline(buf, MAXBUF);
-		if (strcmp((const char *)buf, "go") == 0) {
-			m_machine->debugger().console().get_visible_cpu()->debug()->go();
-			break;
-		}
 		// execute_commands
 		if (i > 0) {
 			m_machine->debugger().console().execute_command((const char *)buf, true);
 			flush_text_buffer();
 		}
 	}
-
 }
 
 void debug_tty::debugger_update()
@@ -106,6 +106,7 @@ void debug_tty::flush_text_buffer(void)
 		fwrite(line_info.data(), sizeof(char), line_info.length(), stderr);
 		fputc('\n', stderr);
 	}
+	text_buffer_clear(textbuf);
 }
 
 //

@@ -69,7 +69,7 @@ function osdmodulesbuild()
 		-- MAME_DIR .. "src/osd/modules/debugger/debugimgui.cpp",
 		-- MAME_DIR .. "src/osd/modules/debugger/debugwin.cpp",
 		--MAME_DIR .. "src/osd/modules/debugger/none.cpp",
-		MAME_DIR .. "src/osd/modules/debugger/tty.cpp",
+		MAME_DIR .. "src/osd/modules/debugger/debugtty.cpp",
 		-- MAME_DIR .. "src/osd/modules/debugger/xmlconfig.cpp",
 		-- MAME_DIR .. "src/osd/modules/debugger/xmlconfig.h",
 		MAME_DIR .. "src/osd/modules/diagnostics/diagnostics_module.h",
