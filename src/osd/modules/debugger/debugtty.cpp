@@ -12,6 +12,7 @@
 #include "debug/debugcon.h"
 #include "debug/debugcpu.h"
 #include "debugger.h"
+#include "debug/debugbuf.h"
 
 #include <unistd.h>
 #include <sys/time.h>
@@ -77,6 +78,16 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 		off_t curpc = debug->history_pc(0).first;
 		fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
 		dump_registers(device, "PC SP AF BC DE HL");
+		// disassemble one line
+		debug_disasm_buffer buffer(device);
+		// disassemble the current instruction and get the length
+		std::string instruction;
+		offs_t next_pc, size;
+		u32 info;
+		buffer.disassemble(curpc, instruction, next_pc, size, info);
+		fprintf(stderr, "disassemble: out = <%s>, next_pc = %04x, info = %x\n", instruction.c_str(), next_pc, info);
+		u32 pc = buffer.next_pc_wrap(curpc, info & util::disasm_interface::LENGTHMASK);
+		fprintf(stderr, "pc = %04x\n", pc);
 	}
 	fprintf(stderr, ">> "); fflush(stderr);
 	i = getline(buf, MAXBUF);

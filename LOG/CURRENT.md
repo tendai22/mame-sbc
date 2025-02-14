@@ -1324,3 +1324,95 @@ start_hook を呼び出している個所を見る。diexec.h 内で debugger_st
 
 デバッガ最後の機能は逆アセンブルですな。
 
+* debugcpu.cpp が m_disasm メンバを持っている。この型は device_disasm_indirect / util::disasm_interface である。
+
+* device_disasm_indirect を調べる。メンバ関数 disassemble がある。これがstream に逆アセンブル結果を書き出すのだろう。
+
+```
+virtual offs_t disassemble(std::ostream &stream, offs_t pc, data_buffer const &opcodes, data_buffer const &params) override
+{
+	offs_t const result(m_dasm_override(stream, pc, opcodes, params));
+	return result ? result : m_disasm->disassemble(stream, pc, opcodes, params);
+}
+```
+
+pc を渡して1命令だけ逆アセンブルするのかな？次の命令のpcを返すのだろう。
+
+まず、m_dasm_override 4引数で呼び出してから、結果がなければ m_disasm->disassemble を呼び出すらしい。
+
+### m_dasm_override
+
+class device_disasm_override のメンバ変数らしい。
+
+```
+	dasm_override_delegate const &m_dasm_override;
+```
+
+dasm_override_delegate はクラス device_delegate の typedef なので、device_delegate を見る。ちょっとわからんな。どの関数実体が呼ばれるのか。
+
+ちょっとよくわからない。コマンドから使い方を探ってみよう。
+
+### debug_disasm_buffer
+
+* 内部で debug_disasm_buffer buffer を初期化して、適宜 
++ buffer.disassemble(...), 
++ buffer.disasssemble_info(pc), 
+
+```
+	debug_disasm_buffer buffer(*cpu);
+	while (count-- != 0)
+	{
+		// disassemble the current instruction and get the length
+		u32 result = buffer.disassemble_info(pc);
+		pc = buffer.next_pc_wrap(pc, result & util::disasm_interface::LENGTHMASK);
+	}
+
+```
+
+* debug_disasm_buffer::disassemble_info(pc)
+
+```
+void debug_disasm_buffer::disassemble(offs_t pc, std::string &instruction, offs_t &next_pc, offs_t &size, u32 &info) const
+{
+	std::ostringstream out;
+	u32 result = m_dintf.disassemble(out, pc, m_buf_opcodes, m_buf_params.active() ? m_buf_params : m_buf_opcodes);
+	instruction = out.str();
+	size = result & util::disasm_interface::LENGTHMASK;
+	next_pc = m_next_pc(pc, size);
+	info = result;
+}
+```
+
+out に逆アセンブル結果の文字列を書き出して、引数の instruction にコピーする。size, next_pc, info は呼び出し側に変数を取っておいてその参照を渡せばよさそう。
+
+debug_disasm_buffer::disassemble を呼び出す方法を調べる。
+
+* debug_disasm_buffer コンストラクタ: device_t 参照を渡せばよい。
+
+以上をまとめて、wait_for_debugger に仕込んだ。
+
+```
+	// disassemble one line
+	debug_disasm_buffer buffer(device);
+	// disassemble the current instruction and get the length
+	std::string instruction;
+	offs_t next_pc, size;
+	u32 info;
+	buffer.disassemble(curpc, instruction, next_pc, size, info);
+	fprintf(stderr, "disassemble: out = <%s>, next_pc = %04x, info = %x\n", instruction.c_str(), next_pc, info);
+	u32 pc = buffer.next_pc_wrap(curpc, info & util::disasm_interface::LENGTHMASK);
+	fprintf(stderr, "pc = %04x\n", pc);
+```
+
+これで、
+
+```
+>> s
+debug_tty: wait_for_debugger: pc = 1C93:
+PC 1c93 SP 8045 AF 0040 BC 0000 DE 0000 HL 8045
+disassemble: out = <ld   a,$00>, next_pc = 1c95, info = 80000002
+pc = 1c95
+>>
+```
+
+と期待通り表示された。
