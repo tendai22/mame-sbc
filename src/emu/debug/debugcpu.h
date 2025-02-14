@@ -42,6 +42,7 @@ public:
 
 	// getters
 	symbol_table &symtable() { return *m_symtable; }
+	const device_state_interface::entrylist_type &state_entries() { return m_state->state_entries(); }
 
 	// commonly-used pass-throughs
 	int logaddrchars() const { return (m_memory != nullptr && m_memory->has_space(AS_PROGRAM)) ? m_memory->space(AS_PROGRAM).logaddrchars() : 8; }

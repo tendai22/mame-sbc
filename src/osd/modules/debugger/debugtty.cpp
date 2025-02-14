@@ -44,9 +44,12 @@ public:
 	virtual void debugger_update() override;
 
 protected:
+	void dump_registers(device_t &device, const char *reg_names);
+	// raw keyin/out routines
 	int getch(void);
 	int kbhit(void);
 	void putch(uint8_t ch);
+	// line input/edit 
 	int getline(uint8_t *buffer, int len);
 	void flush_text_buffer(void);
 private:
@@ -67,16 +70,21 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 	int i;
 	uint8_t buf[MAXBUF];
 
+	flush_text_buffer();
 	if (firststop) {
 		// get current pc
 		device_debug *debug = device.debug();
 		off_t curpc = debug->history_pc(0).first;
 		fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
+		dump_registers(device, "PC SP AF BC DE HL");
 	}
-	flush_text_buffer();
 	fprintf(stderr, ">> "); fflush(stderr);
 	i = getline(buf, MAXBUF);
 	// execute single command
+	if (i < 0) {
+		m_machine->debugger().console().execute_command("hardreset", false);
+		fprintf(stderr, "exit\n");
+	}
 	if (i > 0) {
 		// false: no need to echoback, because getline already echoed it back
 		m_machine->debugger().console().execute_command((const char *)buf, false);
@@ -119,6 +127,10 @@ int debug_tty::getline(uint8_t *buffer, int len)
 			}
 			continue;
 		}
+		if (i == 0 && ch == 0x04) {
+			// Ctrl-D
+			return -1;
+		}
 		if (ch == '\n' || ch == '\r') {
 			fprintf(stderr, "\n");
 			buffer[i] = '\0';
@@ -128,6 +140,31 @@ int debug_tty::getline(uint8_t *buffer, int len)
 		putch(ch);
 	}
 	return i;
+}
+
+// -------------------------------------------
+// dump_registers: for mame-sbc debugtty.cpp
+// -------------------------------------------
+
+void debug_tty::dump_registers(device_t &device, const char *reg_name)
+{
+	// add all registers into it
+	std::stringstream s0(reg_name);
+	std::string s;
+	bool outflag = false;
+	while (std::getline(s0, s, ' ')) {
+		// find entry and dump it
+		for (const auto &entry : device.debug()->state_entries()) {
+			if (s.compare(entry->symbol()) == 0) {
+				fprintf(stderr, "%s %04lx ", s.c_str(), entry->value());
+				outflag = true;
+				break;
+			}
+		}
+	}
+	if (outflag) {
+		fprintf(stderr, "\n");
+	}
 }
 
 //

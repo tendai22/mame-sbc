@@ -1127,3 +1127,200 @@ while (count-- != 0)
 
 この辺りが複数行逆アセンブルの実行みたいだ。
 
+### gni コマンドを実行してみる。
+
+```
+debug_tty: wait_for_debugger: pc = 0000:
+Currently targeting emuz80 (emuz80 (Z80 with PIC18F47Q53))
+>> gni
+debug_tty: wait_for_debugger: pc = 0001:
+Stopped at temporary breakpoint 1 on CPU ':maincpu'
+>> gni
+debug_tty: wait_for_debugger: pc = 0004:
+Stopped at temporary breakpoint 4 on CPU ':maincpu'
+>> gni
+
+␦txd: overrun
+Z80 BASIC Ver 4.7b
+Copyright (C) 1978 by Microsoft
+24190 Bytes free
+Ok
+```
+
+* pc = 0001  
+pc = 0004  
+のあと、BASICインタプリタ起動まで行ってしまった。
+* Stopped at temporary breakpoint 4 on CPU ':maincpu' が出る。
+* 普通の step コマンドでは、`debug_tty: wait_for_debugger: pc = 0004:` 鹿出ないのだが。
+* なぜ最初2命令しか効かないのかは謎。
+
+レジスタダンプについては理解が進まなかった。state_entry に戻ってやり直し。
+
+### 強引にループを回してみる。
+
+```
+// add all registers into it
+for (const auto &entry : m_state->state_entries())
+{
+	// TODO: floating point registers
+	if (!entry->is_float())
+	{
+		using namespace std::placeholders;
+		std::string tempstr(strmakelower(entry->symbol()));
+		m_symtable->add(
+			tempstr.c_str(),
+			std::bind(&device_state_entry::value, entry.get()),
+			entry->writeable() ? std::bind(&device_state_entry::set_value, entry.get(), _1) : symbol_table::setter_func(nullptr),
+			entry->format_string());
+	}
+}
+```
+
+このループを wait_for_debugger の最初で呼び出してみる。
+
+何も表示されないが、fprintf 挟みまくって entry ループで回っていることが分かった。
+
+```
+	for (const auto &entry : m_state->state_entries())
+	{
+		if (!entry->is_float())
+			fprintf(stderr, "entry %s %04lx\n", entry->symbol(), entry->value());
+	}
+```
+
+これでレジスタダンプしてくれる。手掛かりは得た。
+
+```
+dump_registers:
+entry PC 1c98
+entry CURPC 1c98
+entry SP 8045
+entry CURFLAGS 0040
+entry A 0000
+entry B 0000
+entry C 0000
+entry D 0000
+entry E 0000
+entry H 0080
+entry L 0045
+entry AF 0040
+entry BC 0000
+entry DE 0000
+entry HL 8045
+entry IX ffff
+entry IY ffff
+entry AF2 0000
+entry BC2 0000
+entry DE2 0000
+entry HL2 0000
+entry WZ 0093
+entry R 000b
+entry I 0000
+entry IM 0000
+entry IFF1 0000
+entry IFF2 0000
+entry HALT 0000
+```
+
+m_state が class device_debug のプライベートメンバなので、このコードは device_debug の外から呼び出せない。
+
+device_debug にレジスタ名の文字列渡して、ダンプ文字列を返してもらうメンバ関数を導入するか。検索で遅いだろうがインタラクティブなところでしか使わないので、とりあえずそれで進めよう。
+
+CPU依存なので、CPUごとにレジスタ文字列を変える必要がある。また、デバッグ状況により着目するレジスタも切り替えたい。と考えると、デバッガの状態として、レジスタ文字列を保持しておいて、デバッガストップごとにこの文字列でレジスタを印字させるのがよさそうだ。
+
+* device_debug::format_register_state(const char *register_list_str)
+* wait_for_debugger 先頭で、デバッガの文字列を format_register_state に渡して文字列を返させ、それを printf する感じ。
+
+### z80_device::state_string_export(...)
+
+フラグを "S...X..C" みたいな文字列に変換してくれる関数らしい。  
+device_state_interface で呼び出せるようだ。
+
+### レジスタダンプが動いた。
+
+例えば、`debug()->dump_registers("PC SP AF BC DE HL");` を呼び出すと、  
+
+```
+PC 0004 SP 80ed AF 0040 BC 0000 DE 0000 HL 0000
+```
+
+というレジスタ内容印字してくれる。
+
+* 空白区切りに std::getline(stream, string, delim) を使っています。
+* 文字列一致に string::compare を使っています。
+* 出力が fprintf(stderr, ...) なので、これは text_buffer に出力するように改める必要があります。
+
+### レジスタダンプを debugtty.cpp に移した。
+
+class debut_tty::dump_register(...) とした。
+
+* entry ループを構成するために、device_debug クラスの state_entries() を返すようにした。
+  + device_debug::state_entries() メンバ関数を追加。
+
+```  
+const device_state_interface::entrylist_type &state_entries() { return m_state->state_entries(); }
+```
+
+device_debug オブジェクトを得るには、device_t 型から掘り出す。wait_for_debugger で device_t 型を掘り出せているので、それを引数で渡す。
+
+受けたほうは、device.debug() で device_debug 型ポインタを得られるので、state_entries() を呼び出せばよい。
+
+```
+void debug_tty::dump_registers(device_t &device, const char *reg_name)
+{
+	// add all registers into it
+	std::stringstream s0(reg_name);
+	std::string s;
+	bool outflag = false;
+	while (std::getline(s0, s, ' ')) {
+		// find entry and dump it
+		for (const auto &entry : device.debug()->state_entries()) {
+			if (s.compare(entry->symbol()) == 0) {
+				fprintf(stderr, "%s %04lx ", s.c_str(), entry->value());
+				outflag = true;
+				break;
+			}
+		}
+	}
+	if (outflag) {
+		fprintf(stderr, "\n");
+	}
+}
+```
+
+### レジスタダンプ: 残件
+
+* フラグ状態ダンプを文字の並びで表すようにする。
+* text_buffer に書き出す(fprintf(stderr, ...)でなく)。
+
+### 閑話休題: debug keypress
+
+デバッグ停止キーみたいなのがあるみたいだ。
+
+```
+if (m_machine.ui_input().pressed(IPT_UI_DEBUG_BREAK))
+{
+	visiblecpu->debug()->ignore(false);
+	visiblecpu->debug()->halt_on_next_instruction("User-initiated break\n");
+}
+```
+
+ui.input() は ui_input_manger のメンバポインタを返す。push_event でキー押し下げをキューに置く。おかれたイベントを pressed(IPT_UI_DEBUG_BREAK) でチェックするのだろう。
+
+debugger_cpu::start_hook 内でチェックが利いている。 `IPT_UI_DEBUG_BREAK` をチェックしているのはこの内部だけで、ならば start_hook 最初の1回だけなのかと疑問が生じる。
+
+start_hook を呼び出している個所を見る。diexec.h 内で debugger_start_cpu_hook １か所のみ。ところが、スケジューラ内部で
+
+```
+	exec->debugger_start_cpu_hook(target);
+	exec->run();
+	exec->debugger_stop_cpu_hook();
+
+```
+
+となっているので、各デバイスの run 前後で必ず呼ばれるということだ。 `push_event(IPT_UI_DEBUG_BREAK)` を呼び出すとキー入力で実行停止、デバッガに落ちるということだろう。
+
+## 逆アセンブル
+
+デバッガ最後の機能は逆アセンブルですな。
+
