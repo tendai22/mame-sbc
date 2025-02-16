@@ -55,6 +55,7 @@ protected:
 	void flush_text_buffer(void);
 private:
 	running_machine *m_machine;
+	const char *m_register_fmt;
 	int m_status;
 };
 
@@ -76,18 +77,16 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 		// get current pc
 		device_debug *debug = device.debug();
 		off_t curpc = debug->history_pc(0).first;
-		fprintf(stderr, "debug_tty: wait_for_debugger: pc = %04lX:\n", curpc);
-		dump_registers(device, "PC SP AF BC DE HL");
 		// disassemble one line
 		debug_disasm_buffer buffer(device);
-		// disassemble the current instruction and get the length
 		std::string instruction;
 		offs_t next_pc, size;
 		u32 info;
 		buffer.disassemble(curpc, instruction, next_pc, size, info);
-		fprintf(stderr, "disassemble: out = <%s>, next_pc = %04x, info = %x\n", instruction.c_str(), next_pc, info);
-		u32 pc = buffer.next_pc_wrap(curpc, info & util::disasm_interface::LENGTHMASK);
-		fprintf(stderr, "pc = %04x\n", pc);
+		fprintf(stderr, "%04lx %-20s ", curpc, instruction.c_str());
+		//u32 pc = buffer.next_pc_wrap(curpc, info & util::disasm_interface::LENGTHMASK);
+		// disassemble the current instruction and get the length
+		dump_registers(device, "PC SP AF BC DE HL R");
 	}
 	fprintf(stderr, ">> "); fflush(stderr);
 	i = getline(buf, MAXBUF);
@@ -167,7 +166,15 @@ void debug_tty::dump_registers(device_t &device, const char *reg_name)
 		// find entry and dump it
 		for (const auto &entry : device.debug()->state_entries()) {
 			if (s.compare(entry->symbol()) == 0) {
-				fprintf(stderr, "%s %04lx ", s.c_str(), entry->value());
+				const char *fmt;
+				switch(entry->datasize()) {
+				case 1:	fmt = "%s %02lx "; break;
+				case 2: fmt = "%s %04lx "; break;
+				case 3: fmt = "%s %06lx "; break;
+				case 4: fmt = "%s %08lx "; break;
+				default: fmt = "%s %04lx "; break;
+				}
+				fprintf(stderr, fmt, s.c_str(), entry->value(), entry->datasize());
 				outflag = true;
 				break;
 			}
