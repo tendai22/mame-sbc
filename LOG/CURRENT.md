@@ -1416,3 +1416,83 @@ pc = 1c95
 ```
 
 と期待通り表示された。
+
+### デバッガ状態表示のブラッシュアップ
+
+wait_for_debugger の firststop 引数が true の時が、ブレークストップ後の最初のエントリになる。ここでレジスタダンプと逆アセンブルを表示させる。
+
+buffer.disassemble で得た逆アセンブルコード string と PC を fprintf 出力する
+
+```
+machine_reset
+Currently targeting emuz80 (emuz80 (Z80 with PIC18F47Q53))
+0000 di                   PC 0000 SP 0000 AF 0040 BC 0000 DE 0000 HL 0000 R 00
+>> s
+0001 ld   sp,$80ED        PC 0001 SP 0000 AF 0040 BC 0000 DE 0000 HL 0000 R 01
+>> s
+0004 jp   $0041           PC 0004 SP 80ed AF 0040 BC 0000 DE 0000 HL 0000 R 02
+>>
+```
+
+逆アセンブルされたコードとレジスタダンプを1行にまとめてみた。いったんこれで完成とする。ただし、レジスタダンプを書式文字列 "PC SP AF BC DE HL R" で表示させているところは設計面から検討する必要がある。
+
+### レジスタダンプ機能の整理
+
+レジスタダンプ機能で、ダンプするレジスタを文字列で指定することを考える。これは、
+デバッグ状況で、着目するレジスタを切り替えてダンプしたいと考えているからである。
+
+現在の mame では、レジスタは、CPUソースファイル(例えば、z80.cpp)中で、state_add メンバ関数で登録される。
+
+z80_device::device_start() 関数内部で state_add メンバ関数が呼び出される。
+
+```
+	// set up the state table
+	state_add(STATE_GENPC,     "PC",        m_pc.w).callimport();
+	state_add(STATE_GENPCBASE, "CURPC",     m_prvpc.w).callimport().noshow();
+	state_add(Z80_SP,          "SP",        SP);
+	state_add(STATE_GENFLAGS,  "GENFLAGS",  F).noshow().formatstr("%8s");
+	state_add(Z80_A,           "A",         A).noshow();
+	...
+	state_add(Z80_L,           "L",         L).noshow();
+	state_add(Z80_AF,          "AF",        AF);
+	state_add(Z80_BC,          "BC",        BC);
+	state_add(Z80_DE,          "DE",        DE);
+```
+
+* z80_device の基底クラス cpu_device で、
+* cpu_device の基底クラスの一つが device_state_interface であり、
+* device_state_interface のメンバ関数として、いくつかの state_add メンバ関数が定義されている。
+* device_state_interface のメンバ m_state_list が state list の先頭を保持している。つまり、リストらしい。
+* 各要素は device_state_entry クラスらしい。
+* state_add 関数のうち、3引数のものは、
+  + int index (Z80_BCなど)、
+  + const char *symbol ("BC"など)
+  + ItemType &data ... BC を指定しているが、これはレジスタ共用体(m_bc.w)のマクロである。
+
+device_state_entry クラスは、
+
+```
+	// public state description
+	device_state_interface *m_device_state;         // link to parent device state
+	u32                     m_index;                // index by which this item is referred
+	u64                     m_datamask;             // mask that applies to the data
+	u8                      m_datasize;             // size of the data
+	u8                      m_flags;                // flags for this data
+	std::string             m_symbol;               // symbol for display; all lower-case version for expressions
+	std::string             m_format;               // supported formats
+	bool                    m_default_format;       // true if we are still using default format
+```
+
+m_index, m_symbol の他にも datamask, datasize がある。また、m_format, m_default_format と印字書式の指定がある。ここを調べておく必要がある。
+
+実際のCPUでの定義に戻る。state_add(...)の返り値に noshow() や formatstr("%8s") を呼び出しているところがある。これらのメンバ関数は、エントリの値を追加で設定している。noshow は「表示しない」フラグを立てており、formatstr は、fprintf 書式を指定している。
+
+表示書式は 
+
+* formatstr(...) を呼び出すと、
+  + m_format.assign(_format) で m_format に string を assign し、m_default_format を false にする。
+  + format(nullptr, 0)を呼び出す。
+* format(...) は printf 書式出力を実行する。内部に書式文字列パーズ処理を含んでいる。これは3引数なので、上の2引数呼び出しには対応しない。
+
+
+

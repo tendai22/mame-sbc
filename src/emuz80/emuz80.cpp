@@ -110,6 +110,7 @@ INPUT_PORTS_END
 void emuz80_state::emuz80(machine_config &config)
 {
 	/* basic machine hardware */
+	fprintf(stderr, "emuz80_state::emuz80 start\n");
 	//Z80(config, m_maincpu, XTAL(3'579'545));
 	Z80(config, m_maincpu, XTAL(40'000'000));
 	UART(config, m_uart, 9600);

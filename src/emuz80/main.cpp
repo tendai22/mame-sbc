@@ -56,9 +56,12 @@ public:
 
 	int execute()
 	{
+		fprintf(stderr, "machine_manager.execute: start\n");
 		auto system = &GAME_NAME(emuz80);
 		machine_config config(*system, m_options);
+		fprintf(stderr, "enter running_machine constructer\n");
 		running_machine machine(config, *this);
+		fprintf(stderr, "enter running_machine::run()\n");
 		return machine.run(false);
 	}
 
