@@ -67,6 +67,10 @@ device_state_entry::device_state_entry(int index, const char *symbol, u8 size, u
 		m_symbol.assign("CURPC");
 	else if (index == STATE_GENFLAGS)
 		m_symbol.assign("CURFLAGS");
+	else if (index == STATE_GENREGDUMP) {
+		m_symbol.assign("CURREGDUMP");
+		m_flags |= DSF_CUSTOM_STRING;
+	}
 }
 
 device_state_entry::device_state_entry(int index, device_state_interface *dev)
@@ -569,4 +573,48 @@ void device_state_interface::interface_post_start()
 	// make sure we got something during startup
 	if (m_state_list.size() == 0)
 		throw emu_fatalerror("No state registered for device '%s' that supports it!", device().tag());
+}
+
+//------------------------------------------------
+//  export_regdump - construct register dump string
+//------------------------------------------------
+
+void device_state_interface::export_regdump(std::string &output) const
+{
+	// One of the base classes of cpu_device is device_state_interface,
+	// so we can enumerate register states in this member function
+	// add all registers into it
+	std::string s;
+	std::istringstream fmt;
+	std::ostringstream ostr;
+
+	// if GENREGDUMP entry exists, get dump_format from z80_device via this entry
+	const device_state_entry *entryptr = state_find_entry(STATE_GENREGDUMP);
+	if (entryptr) {
+		std::string is = entryptr->to_string();
+		// if regdump_format is empty, is has 80-character spaces
+		// so, is.length() == 0 is useless.
+		fmt = std::istringstream(is);
+	}
+	// If regdump_format is specified, use it
+	// In case is is emply, no output to ostr occurs.
+	while (std::getline(fmt, s, ' ')) {
+		for (const auto &entry : state_entries()) {
+			if (s.compare(entry->symbol()) == 0) {
+				ostr << entry->symbol() << ": " << entry->to_string() << " ";
+				continue;
+			}
+		}
+	}
+	if (ostr.str().length() > 0) {
+		output = ostr.str();
+		return;
+	}
+	// regdump_format is empty, dump non-noshow() entries
+	for (const auto &entry : state_entries()) {
+		if (entry->visible() == 0)
+			continue;
+		ostr << entry->symbol() << ": " << entry->to_string() << " ";
+	}
+	output = ostr.str();
 }

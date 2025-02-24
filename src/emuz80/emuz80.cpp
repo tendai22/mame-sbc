@@ -115,6 +115,7 @@ void emuz80_state::emuz80(machine_config &config)
 	Z80(config, m_maincpu, XTAL(40'000'000));
 	UART(config, m_uart, 9600);
 	m_maincpu->set_addrmap(AS_PROGRAM, &emuz80_state::z80_mem);
+	m_maincpu->set_regdump_format("A BC DE HL SP");
 	//m_maincpu->set_addrmap(AS_IO, &emuz80_state::io_map);
 }
 

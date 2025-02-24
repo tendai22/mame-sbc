@@ -1494,5 +1494,182 @@ m_index, m_symbol の他にも datamask, datasize がある。また、m_format,
   + format(nullptr, 0)を呼び出す。
 * format(...) は printf 書式出力を実行する。内部に書式文字列パーズ処理を含んでいる。これは3引数なので、上の2引数呼び出しには対応しない。
 
+### 本デバッガでのレジスタ群表示
 
+以下のことをイメージする(要件とラフな実装イメージ)
 
+* レジスタ群表示は、「レジスタ名: 値」の列からなる。
+* CPUごとに異なる。
+* デフォルトでは、noshow() が false のエントリすべてを出力する。
+* CPUごとにカスタマイズできる。
+* デバッグ局面により、カスタマイズできる。例: FORTHインタプリタの場合、データSP、リターンSP、16ビットアキュムレータを表示する。
+
+以下の方針で臨む。
+
+* エントリ名 STATE_GENREGDUMP を作成する。
+* device_state_entry コンストラクタ内部で、STATE_GENREGDUMPの場合は、名前 "CURREGDUMP" をassignしておく。
+* フラグ DSF_CUSTOM_STRING を立てておく。すると、to_stringの中でstate_string_export を呼び出すようになる。
+* 挙動は、STATE_GENFLAGSに合わせる。  
+  CPU固有のレジスタダンプがあるなら、{cpu}.cpp 内で {cpu}_device::state_string_export メンバ関数をオーバライドしてある。そこに STATE_GENREGDUMP も switch-case 節を追加する。
+* これと別に、cpu_device クラスに std::string m_regdump_format メンバを追加する。"A HL BC DE CURFLAGS" のような文字列をデバッガコマンドで設定できる。
+* このデフォルトの挙動は、device_state_entry::regdump_string_export(std::string format) として、device_state_entry メンバ関数で定義しておく。
+
+これで多分大丈夫。
+
+* wait_for_debugger 内部でレジスタダンプを出力する。
+  + device_state_entry("CURREGDUMP")を探す。あれば entry->to_export(format_string)を呼び出す。
+  + CURREGDUMP がなければ、noshow()がfalse のエントリすべてを順に文字列化(to_string())してダンプする。
+* 引数 format は、
+  + デバッガ内部で書式文字列が指定すると、cpu()->set_regdump_format()でcpu_device に設定しておく。
+  + CPU固有の派生 z80_device クラスの中で m_regdump_format メンバを設定しておく。generic クラスでは nullptr である。
+  + cpu()->regdump_format() が non-null であれば、それを format に仕立てて引数に与える。
+  + 
+
+* state_string_export 関数は、各CPUに合わせてカスタマイズできる。
+  + CPUデフォルトの動作をコードに焼き付ける。
+  + 
+* m_format メンバにレジスタ名を指す文字列を保持する。
+* debug_tty::dump_registers でレジスタの値を印字する。この中で device_state_entry::to_string を呼び出して custom に返された文字列を出力する。
+
+### 再考、
+
+* device_state_entry の value に文字列は保持できない。
+* cpu_device にレジスタダンプ文字列を返させる。
+* wait_for_debugger 内で、 cpu_device は、 m_machine->debugger().console().get_visible_cpu() で得る。
+* cpu_device::export_regdump(std::string &dump_string) を呼び出す。ダンプ文字列が返されるので、それを fprintf(stderr, ...) に書き出す。
+
+### これでも旨く行かない。
+
+cpu_deviceを得る方法がない。device_t は撮れるのだが、cpu_device が撮れない。
+
+結局、
+
+* device_t &device から device.interface(stateintf) で device_state_interface ポインタを得る。
+* device_state_interface::export_regdump(std::string output) で、
+output にダンプする。
+
+となった。一周回って元通り。(debug_tty から device_state_interface にダンプ機能が移動した)
+
+regdump_format_string をどこに置くかが未解決。
+
+* debug_tty にメンバを置いて、wait_for_debugger 内で渡せばよい。
+* 起動時に debug_tty に渡す方法が分からない。
+
+起動時に debug_tty は生成されていない。
+
+うむ、やっぱり、
+
+* z80.cpp で、 state_add(device_state_entry に "GENREGDUMP" エントリを追加する。
+
+```
+	state_add(STATE_GENREGDUMP,  "GENREGDUMP", dummy).noshow();
+```
+
+* エントリの mflags に DSF_CUSTOM_STRING を立てておく。device_state_entry のコンストラクタで指定する。
+
+```
+	else if (index == STATE_GENREGDUMP) {
+		m_symbol.assign("CURREGDUMP");
+		m_flags |= DSF_CUSTOM_STRING;
+	}
+```
+
+* wait_for_debugger 中で、"GENREGDUMP" エントリを検索し、entry->to_string() を呼び出して、返り値から formatted_string を得る。
+* entry_to_string() は、内部で m_device_state->state_string_export(*this, custom); を呼び出すので、
+* z80_device::state_string_export(entry, str) で、STATE_GENREGDUMP switch-case 節の中で文字列を生成して str に代入して戻る。
+* switch-case 節の中で、z80_device::m_regdump_format メンバを定義しておき、それを参照する。あとで差し込むので、std::string をメンバとする。
+* m_regdump_format の初期化は nullptr ではできない。空文字列を代入しておく。
+
+### やってみて分かった。
+
+* entry->to_string() は、結局、state_string_export の結果を entry->format(const char *fmt, value) に渡してしまう。
+* GENREGDUMPエントリの formatstr が空だとそこで出力されない。
+* よって、GENREGDUMP エントリの formatstr を %s で指定しておく。
+* カラム数指定のない %s は MAME-ERROR になるので、%80s を指定しておく。
+
+```
+state_add(STATE_GENREGDUMP,  "GENREGDUMP", dummy).noshow().formatstr("%80s");
+```
+
+これで、state_string_export 中で、"A BC DE HL SP" を返して動くようになった。
+
+```
+case STATE_GENREGDUMP:
+	// return dump-register format string, actually list of register names
+	str = std::string("A BC DE HL SP");
+```
+
+### resigter dump まとめ
+
+#### 用法
+
+emuz80.cpp 中の `void emuz80_state::emuz80(machine_config &config)` 内で、 `Z80(config, m_maincpu, ...)` の後で、
+`m_maincpu->set_regdump_format("A BC DE HL SP");` を呼び出す。これで、レジスタ A, BC, DE, HL, SP を1行で印字するようになる。
+
+#### 設計アイディア
+
+* レジスタ名を並べた文字列を書式文字列として扱う。
+* レジスタ名が CPU 依存なので、書式文字列も CPU 依存となる。
+* デバッグ対象のプログラムにより、着目するレジスタを変えたいので、デバッグコマンドで書式文字列を変更できるようにする。
+
+* 書式文字列: m_regdump_format, cpu_device のメンバ。
+* cpu_device::set_regdump_format(const char *format): 書式文字列の設定
+* cpu_device::regdump_format(): 書式文字列の取り出し
+* ......: デバッグコマンドにより書式文字列を設定する
+
+* CPU レジスタは「状態エントリ(device_state_entry)」で保持している。インデックス番号、レジスタの値、名前、値がメンバとして含まれる。
+* CPU 定義(例: z80.cpp)ファイル中で、各レジスタ一つ一つのエントリを順に定義している。
+* 書式文字列の参照、ダンプ文字列の生成を専用の device_state_entry "GENREGDUMP" エントリを使って行う。
+
+#### デバッガコマンド処理 wait_for_debugger
+
+* CPU実行停止(ブレークポイント等)、実行開始前に wait_for_debugger ルーチンを呼び出す。
+* 本ルーチン内でコマンドを1行読み込み、解釈実行する。
+* 停止後初回の呼び出しか、2度目以後の呼び出しかを識別できる。
+* 初回呼び出しで、PCの指す位置の逆アセンブルとレジスタダンプを行う。
+* device_state_interface::export_regdump(output) で文字列 output にレジスタダンプ文字列を得て、標準エラー出力に書き出す。
+
+#### エントリ "GENREGDUMP"
+
+* インデックス番号: STATE_GENREGDUMP
+* 名前: "GENREGDUMP"
+* 値: (保持しない、export_regdump で文字列に取り出す)
+* フラグ: DSF_CUSTOM_STRING|DSF_NOSHOW  
+  DSF_CUSTOM_STRING により、z80_device::state_string_export を呼び出し書式成型する。  
+  DSF_NOSHOW により、デフォルトレジスタダンプの対象外となる。
+
+#### wait_for_debugger からのダンプルーチン export_regdump 呼び出し
+
+* device_t &device から device.interface(stateintf) で device_state_interface ポインタを得る。
+* device_state_interface::export_regdump(std::string output) で、
+output にダンプする。
+
+#### export_regdump 中で、
+
+* "GENREGDUMP" エントリを検索し、entry->to_string() を呼び出す。
+* to_string の中で、z80_device::state_string_export が呼び出される。
+* z80_device::state_string_export の中で、"A BC DE HL SP" を返す。
+* これをレジスタ書式とみなして、単語に区切り、A, BC, DE, HL, SP エントリを検索して出力文字列ストリーム ostr に書き出す。
+* 最後に ostr の内部文字列を output に代入して返す。
+
+#### "GENREGDUMP" エントリの追加
+
+* z80.cpp で、 state_add(device_state_entry に "GENREGDUMP" エントリを追加する。formatstr "%80s" を指定しておく。カラム数指定は必要。なければ MAME-error で蹴られる。
+
+```
+	state_add(STATE_GENREGDUMP,  "GENREGDUMP", dummy).noshow().formatstr("%80");
+```
+
+* エントリの mflags に DSF_CUSTOM_STRING を立てておく。device_state_entry のコンストラクタで指定する。
+
+```
+	else if (index == STATE_GENREGDUMP) {
+		m_symbol.assign("CURREGDUMP");
+		m_flags |= DSF_CUSTOM_STRING;
+	}
+```
+
+* entry_to_string() は、内部で m_device_state->state_string_export(*this, custom); を呼び出すので、
+* z80_device::state_string_export(entry, str) で、STATE_GENREGDUMP switch-case 節の中で文字列を生成して str に代入して戻る。
+* switch-case 節の中で、z80_device::m_regdump_format メンバを定義しておき、それを参照する。あとで差し込むので、std::string をメンバとする。
+* m_regdump_format の初期化は nullptr ではできない。空文字列を代入しておく。

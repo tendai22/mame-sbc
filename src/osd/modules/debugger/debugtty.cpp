@@ -45,7 +45,7 @@ public:
 	virtual void debugger_update() override;
 
 protected:
-	void dump_registers(device_t &device, const char *reg_names);
+	void dump_registers(device_t &device);
 	// raw keyin/out routines
 	int getch(void);
 	int kbhit(void);
@@ -79,15 +79,26 @@ void debug_tty::wait_for_debugger(device_t &device, bool firststop)
 		off_t curpc = debug->history_pc(0).first;
 		// disassemble one line
 		debug_disasm_buffer buffer(device);
+		// and get the result in a string, `instruction`
 		std::string instruction;
 		offs_t next_pc, size;
 		u32 info;
 		buffer.disassemble(curpc, instruction, next_pc, size, info);
+		// print it
 		fprintf(stderr, "%04lx %-20s ", curpc, instruction.c_str());
-		//u32 pc = buffer.next_pc_wrap(curpc, info & util::disasm_interface::LENGTHMASK);
-		// disassemble the current instruction and get the length
-		dump_registers(device, "PC SP AF BC DE HL R");
+		// get device_state_interface,
+		const device_state_interface *stateintf;
+		if (!device.interface(stateintf))
+		{
+			fprintf(stderr, "No state interface available for %s\n", device.name());
+			return;
+		}
+		// and dump it with export_regdump
+		std::string output;
+		stateintf->export_regdump(output);
+		fprintf(stderr, "%s\n", output.c_str());
 	}
+	// single debugger command input/execution
 	fprintf(stderr, ">> "); fflush(stderr);
 	i = getline(buf, MAXBUF);
 	// execute single command
@@ -150,39 +161,6 @@ int debug_tty::getline(uint8_t *buffer, int len)
 		putch(ch);
 	}
 	return i;
-}
-
-// -------------------------------------------
-// dump_registers: for mame-sbc debugtty.cpp
-// -------------------------------------------
-
-void debug_tty::dump_registers(device_t &device, const char *reg_name)
-{
-	// add all registers into it
-	std::stringstream s0(reg_name);
-	std::string s;
-	bool outflag = false;
-	while (std::getline(s0, s, ' ')) {
-		// find entry and dump it
-		for (const auto &entry : device.debug()->state_entries()) {
-			if (s.compare(entry->symbol()) == 0) {
-				const char *fmt;
-				switch(entry->datasize()) {
-				case 1:	fmt = "%s %02lx "; break;
-				case 2: fmt = "%s %04lx "; break;
-				case 3: fmt = "%s %06lx "; break;
-				case 4: fmt = "%s %08lx "; break;
-				default: fmt = "%s %04lx "; break;
-				}
-				fprintf(stderr, fmt, s.c_str(), entry->value(), entry->datasize());
-				outflag = true;
-				break;
-			}
-		}
-	}
-	if (outflag) {
-		fprintf(stderr, "\n");
-	}
 }
 
 //

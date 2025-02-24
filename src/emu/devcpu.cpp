@@ -29,7 +29,8 @@ cpu_device::cpu_device(const machine_config &mconfig, device_type type, const ch
 		device_disasm_interface(mconfig, *this),
 		m_force_no_drc(false),
 		m_access_to_be_redone(false),
-		m_access_before_delay_tag(nullptr)
+		m_access_before_delay_tag(nullptr),
+		m_regdump_format("")
 {
 }
 
@@ -104,3 +105,4 @@ void cpu_device::defer_access() noexcept
 		*m_icountptr = 0;
 	m_access_to_be_redone = true;
 }
+

@@ -650,6 +650,7 @@ void z80_device::device_start()
 	state_add(STATE_GENPCBASE, "CURPC",     m_prvpc.w).callimport().noshow();
 	state_add(Z80_SP,          "SP",        SP);
 	state_add(STATE_GENFLAGS,  "GENFLAGS",  F).noshow().formatstr("%8s");
+	state_add(STATE_GENREGDUMP,  "GENREGDUMP", m_pc.w).noshow().formatstr("%80s");
 	state_add(Z80_A,           "A",         A).noshow();
 	state_add(Z80_B,           "B",         B).noshow();
 	state_add(Z80_C,           "C",         C).noshow();
@@ -809,6 +810,11 @@ void z80_device::state_string_export(const device_state_entry &entry, std::strin
 				F & 0x04 ? 'P':'.',
 				F & 0x02 ? 'N':'.',
 				F & 0x01 ? 'C':'.');
+			break;
+		case STATE_GENREGDUMP:
+			// return dump-register format string, actually list of register names
+			//str = std::string("A BC DE HL SP");
+			str = regdump_format();
 			break;
 	}
 }

@@ -52,6 +52,10 @@ public:
 	void access_after_delay(u32 cycles) noexcept;
 	void defer_access() noexcept;
 
+	// cpu register dump format
+	void set_regdump_format(const char *format) { m_regdump_format = std::string(format); }
+	std::string regdump_format() const { return m_regdump_format; } 
+
 protected:
 	// construction/destruction
 	cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
@@ -62,6 +66,7 @@ private:
 
 	bool m_access_to_be_redone;            // whether an access needs to be redone
 	const void *m_access_before_delay_tag; // if the tag matches on access_before_delay, consider the delay to have already happened
+	std::string m_regdump_format;		   // dump register format
 };
 
 #endif // MAME_EMU_DEVCPU_H

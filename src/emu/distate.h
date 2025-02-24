@@ -27,7 +27,8 @@ enum
 {
 	STATE_GENPC = -1,               // generic program counter (live)
 	STATE_GENPCBASE = -2,           // generic program counter (base of current instruction)
-	STATE_GENFLAGS = -3             // generic flags
+	STATE_GENFLAGS = -3,            // generic flags
+	STATE_GENREGDUMP = -4			// generic register_dump methods
 };
 
 
@@ -308,6 +309,9 @@ public:
 
 	// find the entry for a given index
 	const device_state_entry *state_find_entry(int index) const;
+
+	// dump register state
+	void export_regdump(std::string &output) const;
 
 public: // protected eventually
 
