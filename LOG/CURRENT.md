@@ -1673,3 +1673,35 @@ output にダンプする。
 * z80_device::state_string_export(entry, str) で、STATE_GENREGDUMP switch-case 節の中で文字列を生成して str に代入して戻る。
 * switch-case 節の中で、z80_device::m_regdump_format メンバを定義しておき、それを参照する。あとで差し込むので、std::string をメンバとする。
 * m_regdump_format の初期化は nullptr ではできない。空文字列を代入しておく。
+
+## 他のCPUでもデバッガを起動する
+
+これは簡単で、各プログラムの main.cpp の emulator_info::start_frontend 関数内で、
+
+```
+options.set_value(OPTION_DEBUG, true, OPTION_PRIORITY_MAXIMUM);
+```
+
+を有効にすればよい。
+
+sbc6800の場合、regdump_format 設定なしでも、
+
+```
+warning_txt = -1
+uart_device::device_reset
+memcpy: 8192 bytes to main_rom
+reset vector: E0 D0
+machine_reset
+Currently targeting sbc6800 (sbc6800 (m6800+6850))
+e0d0 lds  #$1F42          A: 00 B: 00 PC: E0D0 S: 0000 X: 0000 CC: D0 WAI: 0
+>> s
+e0d3 sts  $1F08           A: 00 B: 00 PC: E0D3 S: 1F42 X: 0000 CC: D0 WAI: 0
+>> s
+e0d6 lda  #$03            A: 00 B: 00 PC: E0D6 S: 1F42 X: 0000 CC: D0 WAI: 0
+>>
+```
+
+と、逆アセンブルとレジスタダンプが動作した。
+
+sbc6800, sbc6809, pldr6502 も同様に、main.cpp で OPTION_DEBUG を true にするだけでデバッガが起動した。
+
