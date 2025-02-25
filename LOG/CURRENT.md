@@ -1705,3 +1705,95 @@ e0d6 lda  #$03            A: 00 B: 00 PC: E0D6 S: 1F42 X: 0000 CC: D0 WAI: 0
 
 sbc6800, sbc6809, pldr6502 も同様に、main.cpp で OPTION_DEBUG を true にするだけでデバッガが起動した。
 
+# 引数パーズ(2/25)
+
+そろそろ引数で `--debug` を渡すと初めてデバッグ機能が有効になるようにしたい。現状の引数解析機能を調べた。
+
+## 引数周りのメモ
+
+* main 関数: sdlmain.cpp にある。
+* vector<string> args にオプション・引数をばらして入れている。
+
+```
+	std::vector<std::string> args = osd_get_command_line(argc, argv);
+```
+
+* args はそのまま emulator_info::start_frontend(options, osd, args) に渡されている。
+* 解釈されるとしたら start_frontend 内部のことである。start_frontend を調べる。
+* start_frontend(...) は、emuz80, sbc8080, ... 各パッケージの main.cpp 内部で定義されているが、この中では args は一切見ていない。
+* 汎用の mame では start_frontend(...) が見つかっていない。さらに探す。
+
+* mame-sbc にはないので、mame を調べた。
+* cli_frontend を生成して、frontend.execute を実行している。
+
+```
+int emulator_info::start_frontend(emu_options &options, osd_interface &osd, std::vector<std::string> &args)
+{
+	cli_frontend frontend(options, osd);
+	return frontend.execute(args);
+}
+```
+
+* cli_frontend コンストラクタは、中で m_options.add_entries() しているだけで、
+* cli_frontend::execute の中では、machine_manager を生成して、start_execution を呼び出しているだけ。
+
+```
+		start_execution(manager, args);
+```
+
+* cli_frontend::start_execution
+* 謎コード mame_options::populate_hashpath_from_args_and_inis(m_options, args) の後に、
+
+```
+// because softlist evaluation relies on hashpath being populated, we are going to go through
+// a special step to force it to be evaluated
+mame_options::populate_hashpath_from_args_and_inis(m_options, args);
+```
+
+* m_options.parse_command_line(args, OPTION_PRIORITY_CMDLINE) を実行し、この中で例外が投げられなければ、
++ exe を実行し(options.command() 有効の場合)
++ http_server, lua_engine を実行し
+
+```
+manager->start_http_server();
+manager->start_luaengine();
+```
+
+  + 最後にゲームを実行する。
+
+```
+// otherwise just run the game
+m_result = manager->execute();
+```
+
+#### hashpath
+
+どうやら、内部でハッシュパス変数集合を管理する必要があるらしい。ファイル名をランダム番号化するみたいなことと推察した。これ以上は追いかけない。
+
+####  m_options.parse_command_line(args, OPTION_PRIORITY_CMDLINE)
+
+* parse_command_line は class core_options のメンバ関数らしい。
+* m_options は class sdl_osd_interface のメンバ変数。
+* class sdl_options は core_options 派生クラスなので、この呼び出しは、core_options::parse_command_line を呼び出していると考える。
+
+```
+sdl_options &m_options;
+```
+
+#### parse_command_line 内部の処理
+
+* command をargsから引っ張り出す。  
+  option_type::COMMAND の引数が見つかると、それをコマンドとして扱う。
+* command の引数も一緒に引っ張り出す。
+* 残りの引数をパーズする。
+* 先頭がマイナス('-')ならオプション、普通の文字から始まるなら、 unadorned とする。
+* オプションが BOOLEAN なら no の有無で 0, 1 の値を取る。
+* unadorn なら値もその文字列そのもの
+* unadorn でない(通常のマイナスオプション)なら、次の引数を値とする。
+* 以上で do_set_value(エントリ、値、他...) で登録する。
+
+#### do_set_value の処理
+
+* 引数のエントリに値を設定する。
+* add_entry で足すようだが、どのような引数が受理可能かが分からない。
+
